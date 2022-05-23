@@ -1,0 +1,96 @@
+import order.basic
+import data.fin.tuple.basic
+
+namespace social_choice
+
+variables (α : Type*) (n : ℕ)
+
+def pref := linear_order α
+
+namespace pref
+
+def profile := fin n → pref α
+
+def agg := profile α n → pref α
+
+variables {α n} (F : agg α n)
+
+def lt (R : pref α) := R.lt
+
+lemma foo {R S : pref α} (h : ∀ a b, R.lt a b → S.lt a b) : R = S :=
+begin
+  ext a b,
+  simp [decidable.le_iff_lt_or_eq],
+  split,
+  {
+    intro h',
+    cases h',
+    {
+      left,
+      exact h a b h',
+    },
+    {
+      right,
+      assumption,
+    },
+  },
+  {
+    intro h₁,
+    cases h₁,
+    {
+      left,
+      cases @lt_or_gt_of_ne _ R _ _ (@ne_of_lt _ (@partial_order.to_preorder _ (@linear_order.to_partial_order _ S)) _ _ h₁) with _ h₂,
+        assumption,
+      specialize h b a h₂,
+      exfalso,
+      exact @lt_asymm _ (@partial_order.to_preorder _ (@linear_order.to_partial_order _ S)) _ _ h₁ h,
+    },
+    {
+      right,
+      assumption,
+    },
+  },
+end
+
+namespace agg
+
+def unanimity := ∀ (R : profile α n) a b, (∀ i, (R i).lt a b) → (F R).lt a b
+
+def nondictatorship := ∀ i, ¬∀ (R : profile α n) a b, (R i).lt a b → (F R).lt a b
+
+def independence := ∀ (R S : profile α n) a b, (∀ i, (R i).lt a b ↔ (S i).lt a b) → ((F R).lt a b ↔ (F S).lt a b)
+
+def dictatorship (i) : agg α n := λ R, R i
+
+namespace dictatorship
+
+lemma unanimity (i) : (@dictatorship α n i).unanimity :=
+λ _ _ _ h, h i
+
+lemma not_nondictatorship (i) : ¬(@dictatorship α n i).nondictatorship :=
+λ h, h i (λ _ _ _, id)
+
+lemma independence (i) : (@dictatorship α n i).independence :=
+λ _ _ _ _ h, h i
+
+end dictatorship
+
+def pivot (a b) := ∃ i, ∀ (R : profile α n), (R i).lt a b ↔ (F R).lt a b
+
+class card_ge_3 (α : Type*) := (a b c : α) (h : a ≠ b ∧ b ≠ c ∧ c ≠ a)
+
+variable [c3 : card_ge_3 α]
+
+lemma nondictatorship_of_neq_dictatorship : (∀ i, F ≠ dictatorship i) → F.nondictatorship :=
+λ hne i h, hne i (funext (λ R, (foo (h R)).symm))
+
+theorem arrow {a b c : α} : a ≠ b ∧ b ≠ c ∧ c ≠ a → F.unanimity → F.independence → ¬F.nondictatorship :=
+begin
+  sorry,
+end
+
+end agg
+
+end pref
+
+end social_choice

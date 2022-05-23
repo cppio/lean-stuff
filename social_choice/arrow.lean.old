@@ -1,0 +1,336 @@
+import logic.basic
+import data.nat.basic
+import data.fin.basic
+import tactic.by_contra
+
+namespace social_choice.pref
+
+variables (α : Type*) (n : ℕ)
+
+structure preorder := (r : α → α → Prop) (total : total r) (trans : transitive r)
+
+structure order := (preorder : preorder α) (antisymm : anti_symmetric preorder.r)
+
+def profile := fin n → order α
+
+-- def agg := profile α n → preorder α
+def agg := profile α n → order α
+
+variables {α n}
+
+instance : has_coe_to_fun (preorder α) (λ _, α → α → Prop) := ⟨preorder.r⟩
+
+instance : has_coe_to_fun (order α) (λ _, α → α → Prop) := ⟨preorder.r ∘ order.preorder⟩
+
+notation [parsing_only] x ` ≤⟪`:35 r `⟫ ` y:35 := r x y
+
+notation [parsing_only] x ` <⟪`:35 r `⟫ ` y:35 := ¬r y x
+
+instance order_to_preorder : has_coe (order α) (preorder α) := ⟨order.preorder⟩
+
+lemma preorder.le_of_lt {r : preorder α} {x y} (h : x <⟪r⟫ y) : x ≤⟪r⟫ y :=
+begin
+  cases r.total x y,
+  assumption,
+  contradiction,
+end
+
+lemma preorder.ne_of_lt {r : preorder α} {x y} (h : x <⟪r⟫ y) : x ≠ y :=
+begin
+  intro h',
+  apply h,
+  rw h',
+  apply (or_self _).mp,
+  apply r.total,
+end
+
+lemma order.lt_or_gt_of_ne (r : order α) {x y} (h : x ≠ y) : x <⟪r⟫ y ∨ y <⟪r⟫ x :=
+begin
+  cases r.preorder.total x y,
+  left,
+  swap,
+  right,
+  all_goals {
+    intro,
+    apply h,
+    apply r.antisymm; assumption,
+  },
+end
+
+namespace agg
+
+variables (d : fin n) (f : agg α n)
+
+def unanimity := ∀ (p : profile α n) x y, (∀ i, x <⟪p i⟫ y) → x <⟪f p⟫ y
+
+def dictator := ∀ (p : profile α n) x y, x <⟪p d⟫ y → x <⟪f p⟫ y
+
+-- def independence := ∀ (p q : profile α n) x y, (∀ i, x <⟪p i⟫ y ↔ x <⟪q i⟫ y) → (x <⟪f p⟫ y ↔ x <⟪f q⟫ y)
+def independence := ∀ (p q : profile α n) x y, (∀ i, x ≤⟪p i⟫ y ↔ x ≤⟪q i⟫ y) → (x ≤⟪f p⟫ y ↔ x ≤⟪f q⟫ y)
+
+def dictatorship : agg α n := λ p, p d
+
+namespace dictatorship
+
+lemma unanimity : (@dictatorship α n d).unanimity :=
+λ _ _ _ h, h d
+
+lemma dictator : (@dictatorship α n d).dictator d :=
+λ _ _ _ h, h
+
+lemma independence : (@dictatorship α n d).independence :=
+λ _ _ _ _ h, h d
+
+theorem of_dictator (h : f.dictator d) (p x y) : x <⟪f p⟫ y ↔ x <⟪dictatorship d p⟫ y :=
+begin
+  split,
+    swap,
+    apply h,
+  intro h',
+  cases (p d).lt_or_gt_of_ne (preorder.ne_of_lt h'),
+    assumption,
+  exfalso,
+  -- apply ((f p).total y x).elim,
+  apply ((f p).preorder.total y x).elim,
+    assumption,
+  apply h,
+  assumption,
+end
+
+end dictatorship
+
+end agg
+
+namespace arrow
+
+variables (f : agg (fin 3) n) (p : profile (fin 3) n) (y : fin 3)
+
+lemma fin₃ : y = 0 ∨ y = 1 ∨ y = 2 :=
+begin
+  cases y with y hy,
+  cases y,
+    exact or.inl rfl,
+  cases y,
+    exact or.inr (or.inl rfl),
+  cases y,
+    exact or.inr (or.inr rfl),
+  exfalso,
+  exact nat.lt_irrefl _ ((nat.succ_le_succ (nat.one_lt_succ_succ y)).trans_lt hy),
+end
+
+/-
+lemma fin.one_ne_zero : (1 : fin 3) ≠ 0 := @fin.succ_ne_zero 2 0
+lemma fin.two_ne_zero : (2 : fin 3) ≠ 0 := @fin.succ_ne_zero 2 1
+lemma fin.two_ne_one : (2 : fin 3) ≠ 1 := @fin.succ_succ_ne_one 1 0
+
+lemma fin₃' : ∃ x z, x ≠ y ∧ z ≠ y ∧ x ≠ z :=
+begin
+  rcases fin₃ y with h | h | h; rw h,
+  use [1, 2, fin.one_ne_zero, fin.two_ne_zero, fin.two_ne_one.symm],
+  use [0, 2, fin.one_ne_zero.symm, fin.two_ne_one, fin.two_ne_zero.symm],
+  use [0, 1, fin.two_ne_zero.symm, fin.two_ne_one.symm, fin.one_ne_zero.symm],
+end
+-/
+
+lemma fin₃' {w x y z : fin 3} : x ≠ y → w ≠ x → w ≠ y → z ≠ x → z ≠ y → w = z :=
+begin
+  rcases fin₃ y with hy | hy | hy;
+  rcases fin₃ x with hx | hx | hx;
+  rcases fin₃ z with hz | hz | hz;
+  rcases fin₃ w with hw | hw | hw;
+  simp [hy, hx, hz, hw],
+end
+
+def extreme₁ (r : order (fin 3)) := psum (∀ x ≠ y, x <⟪r⟫ y) (∀ z ≠ y, y <⟪r⟫ z)
+def extreme₂ (r : preorder (fin 3)) := (∀ x ≠ y, x <⟪r⟫ y) ∨ (∀ z ≠ y, y <⟪r⟫ z)
+
+def extremal₁ (x z : fin 3) (h : y ≠ z) : order (fin 3) :=
+⟨⟨λ l r, l = r ∨ l = y ∨ r = z, by {
+  intros l r,
+  cases fin.decidable_eq _ l y with h₁,
+  case decidable.is_true {
+    left, right, left, assumption,
+  },
+  cases fin.decidable_eq _ l z with h₂,
+  case decidable.is_true {
+    right, right, right, assumption,
+  },
+  cases fin.decidable_eq _ r y with h₃,
+  case decidable.is_true {
+    right, right, left, assumption,
+  },
+  cases fin.decidable_eq _ r z with h₄,
+  case decidable.is_true {
+    left, right, right, assumption,
+  },
+  left, left, exact fin₃' h h₁ h₂ h₃ h₄,
+}, by {
+  intros l lr r h₁ h₂,
+  rw [or.comm, or.assoc] at h₁,
+  cases h₁,
+  case or.inl {
+    right, left, assumption,
+  },
+  rw ← or.assoc at h₂,
+  cases h₂,
+  case or.inr {
+    right, right, assumption,
+  },
+  cases h₁; cases h₂,
+  right, right, exact h₂.symm.trans h₁,
+  exfalso, exact h (h₂.symm.trans h₁),
+  left, exact h₁.trans h₂,
+  right, left, exact h₁.trans h₂,
+}⟩, by {
+  intros l r h₁ h₂,
+  cases h₁, assumption,
+  cases h₂, symmetry, assumption,
+  cases h₁; cases h₂,
+  exact h₁.trans h₂.symm,
+  exfalso, exact h (h₁.symm.trans h₂),
+  exfalso, exact h (h₂.symm.trans h₁),
+  exact h₂.trans h₁.symm,
+}⟩
+
+def extremal₂ (x z : fin 3) (h : x ≠ y) : order (fin 3) :=
+⟨⟨λ l r, l = r ∨ l = x ∨ r = y, by {
+  intros l r,
+  cases fin.decidable_eq _ l x with h₁,
+  case decidable.is_true {
+    left, right, left, assumption,
+  },
+  cases fin.decidable_eq _ l y with h₂,
+  case decidable.is_true {
+    right, right, right, assumption,
+  },
+  cases fin.decidable_eq _ r x with h₃,
+  case decidable.is_true {
+    right, right, left, assumption,
+  },
+  cases fin.decidable_eq _ r y with h₄,
+  case decidable.is_true {
+    left, right, right, assumption,
+  },
+  left, left, exact fin₃' h h₁ h₂ h₃ h₄,
+}, by {
+  intros l lr r h₁ h₂,
+  rw [or.comm, or.assoc] at h₁,
+  cases h₁,
+  case or.inl {
+    right, left, assumption,
+  },
+  rw ← or.assoc at h₂,
+  cases h₂,
+  case or.inr {
+    right, right, assumption,
+  },
+  cases h₁; cases h₂,
+  right, right, exact h₂.symm.trans h₁,
+  exfalso, exact h (h₂.symm.trans h₁),
+  left, exact h₁.trans h₂,
+  right, left, exact h₁.trans h₂,
+}⟩, by {
+  intros l r h₁ h₂,
+  cases h₁, assumption,
+  cases h₂, symmetry, assumption,
+  cases h₁; cases h₂,
+  exact h₁.trans h₂.symm,
+  exfalso, exact h (h₁.symm.trans h₂),
+  exfalso, exact h (h₂.symm.trans h₁),
+  exact h₂.trans h₁.symm,
+}⟩
+
+def extremal' (h : ∀ i, extreme₁ y (p i)) (x z : fin 3) (hx : x ≠ y) (hz : y ≠ z) : profile (fin 3) n := λ i,
+match h i with
+| psum.inl _ := extremal₂ y x z hx
+| psum.inr _ := extremal₁ y x z hz
+end
+
+lemma extremal'u {y h x z hx hz} (hxz : x ≠ z) : ∀ i, x <⟪extremal' p y h x z hx hz i⟫ z :=
+begin
+  intro i,
+  unfold extremal',
+  cases h i; unfold extremal'._match_1,
+  dsimp [extremal₂, coe_fn, has_coe_to_fun.coe], simp [hx, hxz.symm],
+  dsimp [extremal₁, coe_fn, has_coe_to_fun.coe], simp [hz.symm, hxz, hxz.symm],
+end
+
+lemma extremal'ix {y h x z hx hz} : ∀ i, y ≤⟪p i⟫ x ↔ y ≤⟪extremal' p y h x z hx hz i⟫ x :=
+begin
+  intro i,
+  unfold extremal',
+  cases h i with h h; unfold extremal'._match_1,
+  {
+    dsimp [extremal₂, coe_fn, has_coe_to_fun.coe],
+    simp [hx, hx.symm],
+    apply h, assumption,
+  },
+  {
+    dsimp [extremal₁, coe_fn, has_coe_to_fun.coe],
+    simp,
+    apply preorder.le_of_lt,
+    apply h, assumption,
+  },
+end
+
+lemma extremal'iz {y h x z hx hz} : ∀ i, z ≤⟪p i⟫ y ↔ z ≤⟪extremal' p y h x z hx hz i⟫ y :=
+begin
+  intro i,
+  unfold extremal',
+  cases h i with h h; unfold extremal'._match_1,
+  {
+    dsimp [extremal₂, coe_fn, has_coe_to_fun.coe],
+    simp,
+    apply preorder.le_of_lt,
+    apply h, symmetry, assumption,
+  },
+  {
+    dsimp [extremal₁, coe_fn, has_coe_to_fun.coe],
+    simp [hz, hz.symm],
+    apply h, symmetry, assumption,
+  },
+end
+
+lemma fin₃succ : y + 1 ≠ y :=
+begin
+  rcases fin₃ y with h | h | h; rw h; simp,
+end
+
+lemma extremal (h : ∀ i, extreme₁ y (p i)) (hu : f.unanimity) (hi : f.independence) : extreme₂ y (f p) :=
+begin
+  unfold extreme₂,
+  cases (f p).preorder.total y (y + 1) with hyx hzy,
+    generalize hx : y + 1 = x,
+    rw hx at hyx,
+    have hx : x ≠ y := hx ▸ fin₃succ y,
+    right,
+    intros z hz hzy,
+  swap,
+    generalize hz : y + 1 = z,
+    rw hz at hzy,
+    have hz : z ≠ y := hz ▸ fin₃succ y,
+    left,
+    intros x hx hyx,
+  all_goals {
+    have hzx := (f p).preorder.trans hzy hyx,
+    have hxz : x ≠ z,
+      intro hxz,
+      rw hxz at hyx,
+      exact hz ((f p).antisymm hzy hyx),
+    let q : profile (fin 3) n := extremal' p y h x z hx hz.symm,
+    apply hu q x z (extremal'u p hxz),
+    apply (f q).preorder.trans,
+    exact (hi p q z y (extremal'iz p)).mp hzy,
+    exact (hi p q y x (extremal'ix p)).mp hyx,
+  },
+end
+
+/-
+theorem arrow₃ (f : agg (fin 3) n) : f.unanimity → f.independence → ∃ d, f.dictator d :=
+begin
+end
+-/
+
+end arrow
+
+end social_choice.pref

@@ -1,0 +1,34 @@
+class uncurry_ty (α) where
+  ty : (α → Sort _) → Sort _
+  uncurry : (∀ x, β x) → ty β
+
+open uncurry_ty (uncurry)
+
+instance : uncurry_ty α where
+  ty β := ∀ x, β x
+  uncurry := id
+
+instance [uncurry_ty α'] : uncurry_ty (α × α') where
+  ty β := ∀ x, uncurry_ty.ty λ x' => β ⟨x, x'⟩
+  uncurry f x := uncurry λ x' => f ⟨x, x'⟩
+
+class uncurry_ty' (α) (hd : /-outParam-/ (Sort _)) (tl : outParam ((α → Sort _) → hd → Sort _)) where
+  uncurry : (∀ x, β x) → ∀ x, tl β x
+
+instance : uncurry_ty' α α id where
+  uncurry := id
+
+instance [uncurry_ty' α' hd' tl'] : uncurry_ty' (α × α') α (λ β x => ∀ x', tl' (λ x' => β ⟨x, x'⟩) x') where
+  uncurry f x := uncurry_ty'.uncurry λ x' => f ⟨x, x'⟩
+
+def uncurry' {α} hd : ∀ {tl} [uncurry_ty' α hd tl] {β}, (∀ x, β x) → ∀ x, tl β x := uncurry_ty'.uncurry
+
+def sum₃ : Nat × Nat × Nat → Nat :=
+λ (x, y, z) => x + y + z
+
+def sum₃' : Nat → Nat → Nat → Nat := uncurry sum₃
+
+def sum₃0 : Nat × Nat × Nat → Nat := uncurry' (Nat × Nat × Nat) sum₃
+def sum₃1 : Nat → Nat × Nat → Nat := uncurry' Nat sum₃
+def sum₃2 : Nat → Nat → Nat → Nat := uncurry' _ sum₃
+def sum₃2 : Nat → Nat → Nat → Nat := uncurry' Nat sum₃

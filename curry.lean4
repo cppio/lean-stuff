@@ -1,0 +1,33 @@
+class uncurry_ty (α) where
+  ty : (α → Sort _) → Sort _
+  uncurry : (∀ x, β x) → ty β
+
+namespace uncurry_ty
+
+instance default : uncurry_ty α where
+  ty β := ∀ x, β x
+  uncurry := id
+
+instance prod [uncurry_ty α'] : uncurry_ty (α × α') where
+  ty β := ∀ x, ty λ x' => β ⟨x, x'⟩
+  uncurry f x := uncurry λ x' => f ⟨x, x'⟩
+
+instance sigma [∀ x, uncurry_ty (α' x)] : uncurry_ty (Sigma α') where
+  ty β := ∀ x, ty λ x' => β ⟨x, x'⟩
+  uncurry f x := uncurry λ x' => f ⟨x, x'⟩
+
+end uncurry_ty
+
+open uncurry_ty (uncurry)
+
+def sum₃ : Nat × Nat × Nat → Nat :=
+λ (x, y, z) => x + y + z
+
+def head : (Σ n, Fin (n + 1) → Nat) → Nat :=
+λ ⟨n, f⟩ => f 0
+
+#eval uncurry sum₃ 1 2 3
+#eval uncurry head 1 λ _ => 42
+
+def sum₃' : Nat → Nat → Nat → Nat := uncurry sum₃
+def head' : ∀ n, (Fin (n + 1) → Nat) → Nat := uncurry head

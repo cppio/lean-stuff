@@ -1,0 +1,186 @@
+import Std.Data.AssocList
+import Mathlib.Init.Data.Nat.Lemmas
+
+open Std
+
+abbrev Var := String
+
+class Imperative (m) extends Monad m where
+  load : Var → m Nat
+  store : Var → Nat → m Unit
+
+prefix:100 "⋆" => Imperative.load
+infix:1 " ≔ " => Imperative.store
+
+instance [Imperative m] : Coe Var (m Nat) where
+  coe := Imperative.load
+
+/-
+abbrev Imp := StateT (AssocList Var Nat) OptionM
+
+instance : Imperative Imp where
+  load x := get >>= StateT.lift ∘ AssocList.find? x
+  store x n := modify λ s => s.insert x n
+
+def Imp.sim (m : Imp α) : Option α :=
+  (m ∅).map Prod.fst
+
+def Imp.loop (c : Imp Bool) : Nat → Imp Unit
+  | 0 => StateT.lift none
+  | f + 1 => do if ← c then return () else loop c f
+
+def Imp.while (f : Nat) (cond : Imp Bool) (body : Imp Unit) : Imp Unit :=
+  loop (do if ← cond then do body; return false else return true) (f + 1)
+
+/-
+class imperative m extends monad m :=
+(load : var → m ℕ)
+(store : var → ℕ → m unit)
+(loop : m bool → ℕ → m unit)
+
+def imperative.while {m} [imperative m] (f : ℕ) (cond : m bool) (body : m unit) : m unit :=
+imperative.loop (do b ← cond, if b then do body, return ff else return tt) (f + 1)
+
+open imperative (while) imp (sim)
+-/
+
+open Imp (sim)
+
+#eval sim do
+  "x" ≔ 10
+  "y" ≔ 0
+  Imp.while (←"x") (return (←"x") > 0) (do
+    "y" ≔ (←"x") + (←"y")
+    "x" ≔ (←"x") - 1
+  )
+  ⋆"y"
+-/
+
+/-
+abbrev Imp := StateT (Nat × AssocList Var Nat) OptionM
+
+instance : Imperative Imp where
+  load x := get >>= StateT.lift ∘ AssocList.find? x ∘ Prod.snd
+  store x n := modify <| Prod.map id λ s => s.insert x n
+
+def Imp.sim (f : Nat) (m : Imp α) : Option α :=
+(m (f, ∅)).map Prod.fst
+
+def Imp.while' (cond : Imp Bool) (body : Imp Unit) : Nat → AssocList Var Nat → OptionM (Unit × Nat × AssocList Var Nat)
+  | 0, _ => none
+  | f + 1, s => do
+    let (c, s) ← cond (f + 1, s)
+    if c
+    then do
+      let ((), (_, s)) ← body s
+      while' cond body f s
+    else some ((), s)
+
+def Imp.while (cond : Imp Bool) (body : Imp Unit) : Imp Unit :=
+λ s => while' cond body s.fst s.snd
+
+open Imp (sim)
+
+/-
+int x = 10;
+int y = 0;
+while (x > 0) {
+    y = x + y;
+    x = x - 1;
+}
+return y;
+-/
+
+#eval sim 11 do
+  "x" ≔ 10
+  "y" ≔ 0
+  Imp.while (return (←"x") > 0) (do
+    "y" ≔ (←"x") + (←"y")
+    "x" ≔ (←"x") - 1
+  )
+  ⋆"y"
+-/
+
+abbrev Imp := StateT (AssocList Var Nat) OptionM
+
+instance : Imperative Imp where
+  load x := get >>= StateT.lift ∘ AssocList.find? x
+  store x n := modify λ s => s.insert x n
+
+def Imp.sim (m : Imp α) : Option α :=
+(m ∅).map Prod.fst
+
+open Imp (sim)
+
+#eval sim do
+  "x" ≔ 10
+  "y" ≔ 0
+  while (←"x") > 0 do
+    "y" ≔ (←"x") + (←"y")
+    "x" ≔ (←"x") - 1
+  ⋆"y"
+
+def sqrt : Nat → Nat
+  | 0 => 0
+  | 1 => 1
+  | (x + 2) => let h := Nat.div_lt_self; let y := sqrt ((x + 2) / 2); if (y + y + 1) * (y + y + 1) ≤ x + 2 then y + y + 1 else y + y
+termination_by _ x => x
+
+theorem le_sub_of_add_le_left {x y : Nat} : {z : Nat} → x + y ≤ z → y ≤ z - x
+  | _, Nat.le.refl => Nat.le_of_eq <| Eq.symm <| Nat.add_sub_self_left _ _
+  | _, Nat.le.step h => let that := le_sub_of_add_le_left h; sorry
+
+def sqrt' x lo hi :=
+  if h : lo + 1 < hi
+  then
+    let mid := lo + (hi - lo) / 2;
+    -- let hl : lo < mid := by { 2 ≤ hi - lo };
+    if mid > x / mid
+    then sqrt' x lo mid
+    else if mid < x / mid
+    then sqrt' x mid hi
+    else mid
+  else lo
+
+def sqrt : Nat → Nat
+  | 0 => 0
+  | 1 => 1
+  | x => sqrt' x 0 x
+
+def sqrt x := Id.run do
+  if x < 2 then return x
+  let mut lo := 0
+  let mut hi := x
+  while lo + 1 < hi do
+    let mid := lo + (hi - lo) / 2
+    if mid > x / mid then
+      hi := mid
+    else if mid < x / mid then
+      lo := mid
+    else return mid
+  return lo
+
+/-
+int sqrt(int x) {
+    if (x < 2) return x;
+    int lo = 0;
+    int hi = x;
+    while (lo + 1 < hi) {
+        int mid = lo + (hi - lo) / 2;
+        if (mid > x / mid) hi = mid;
+        else if (mid < x / mid) lo = mid;
+        else return mid;
+    }
+    return lo;
+}
+-/
+
+/-
+def bar := Id.run do
+  let mut x := 0
+  while x < 10 do
+    x := x + 1
+  return x
+
+#eval bar
+-/

@@ -1,0 +1,68 @@
+class uncurry_ty (α) where
+  ty : (α → Sort _) → Sort _
+  uncurry : (∀ x, β x) → ty β
+
+open uncurry_ty
+
+instance : uncurry_ty α where
+  ty β := ∀ x, β x
+  uncurry := id
+
+instance [uncurry_ty α'] : uncurry_ty (α × α') where
+  ty β := ∀ x, ty λ x' => β ⟨x, x'⟩
+  uncurry f x := uncurry λ x' => f ⟨x, x'⟩
+
+instance [∀ x, uncurry_ty (α' x)] : uncurry_ty (Sigma α') where
+  ty β := ∀ x, ty λ x' => β ⟨x, x'⟩
+  uncurry f x := uncurry λ x' => f ⟨x, x'⟩
+
+def sum₃ : Nat × Nat × Nat → Nat :=
+λ (x, y, z) => x + y + z
+
+def head : (Σ n, Fin (n + 1) → Nat) → Nat :=
+λ ⟨n, f⟩ => f 0
+
+#eval uncurry sum₃ 1 2 3
+#eval uncurry head 1 λ _ => 42
+
+def usum₃ : Nat → Nat → Nat → Nat := uncurry sum₃
+def uhead : ∀ n, (Fin (n + 1) → Nat) → Nat := uncurry head
+
+class uncurry_ty' (α) where
+  ty' : _
+  uncurry' : α → ty'
+
+open uncurry_ty'
+
+instance : uncurry_ty' α where
+  ty' := α
+  uncurry' := id
+
+instance [uncurry_ty α] {β : α → _} : uncurry_ty' (∀ x, β x) where
+  ty' := ty β
+  uncurry' := uncurry
+
+class uncurry_ty'' (α) where
+  ty'' : (β : α → Sort _) → [∀ x, uncurry_ty' (β x)] → Sort _
+  uncurry'' : [∀ x, uncurry_ty' (β x)] → (∀ x, β x) → ty'' β
+
+open uncurry_ty''
+
+instance [uncurry_ty α] : uncurry_ty'' α where
+  ty'' β := ty λ x => ty' (β x)
+  uncurry'' f := uncurry λ x => uncurry' (f x)
+
+def sum₃' : Nat → Nat × Nat → Nat :=
+λ x (y, z) => x + y + z
+
+def head' : ∀ {α : Type _}, (Σ n, Fin (n + 1) → α) → α :=
+λ ⟨n, f⟩ => f 0
+
+#eval uncurry'' sum₃ 1 2 3
+#eval uncurry'' head 1 λ _ => 42
+
+def usum₃' : Nat → Nat → Nat → Nat := uncurry'' sum₃'
+def uhead' : ∀ {α : Type _} n, (Fin (n + 1) → α) → α := uncurry'' head'
+
+#eval uncurry'' sum₃' 1 2 3
+#eval uncurry'' head' 1 λ _ => 42

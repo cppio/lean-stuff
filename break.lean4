@@ -1,0 +1,9 @@
+partial def pred : Nat → Nat
+  | 0 => pred 0
+  | n + 1 => n
+
+def bar : Nat := pred 1
+#reduce bar
+#eval bar
+#print pred
+#print axioms bar
