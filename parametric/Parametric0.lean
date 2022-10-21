@@ -3,6 +3,8 @@ import Parametric
 class ParaF (ϕ : Type u → Type u) :=
   prop : ∀ {α β}, (α → β → Prop) → ϕ α → ϕ β → Prop
 
+attribute [simp] ParaF.prop
+
 instance : ParaF λ α => α where
   prop r := r
 
@@ -15,6 +17,8 @@ instance [ParaF ϕ] [ParaF φ] : ParaF λ α => ϕ α → φ α where
 class ParaT (α : Type u) :=
   prop : α → Prop
 
+attribute [simp] ParaT.prop
+
 instance [ParaF ϕ] : ParaT (∀ {α}, ϕ α) where
   prop f := ∀ {α β} (r : α → β → Prop), ParaF.prop r f f
 
@@ -22,9 +26,6 @@ def Para (α) [I : ParaT α] := Subtype I.prop
 
 instance [ParaT α] : CoeFun (Para α) λ _ => α where
   coe := Subtype.val
-
-macro "parametric" : tactic =>
-  `(tactic| (destruct Para; repeat (first | intro _ | apply_assumption)))
 
 def Para.mk [ParaT α] (x : α) (h : ParaT.prop x := by parametric) : Para α := ⟨x, h⟩
 
@@ -155,6 +156,7 @@ end Nat
 
 section List
 
+@[simp]
 def lift (r : α → β → Prop) : List α → List β → Prop
   | [],    []    => True
   | x::xs, y::ys => r x y ∧ lift r xs ys
@@ -168,6 +170,10 @@ theorem lift_to_map {g : α → β} : ∀ {l l'}, lift (λ x y => g x = y) l l' 
   | [],   [],   _ => rfl
   | _::_, _::_, h => congrArg₂ _ h.1 (lift_to_map h.2)
 
+theorem lift_concat : ∀ {xs ys}, lift r (x::xs) (y::ys) → lift r (xs.concat x) (ys.concat y)
+  | [], [], h => h
+  | _::_, _::_, ⟨h₁, h₂, h₃⟩ => ⟨h₂, lift_concat ⟨h₁, h₃⟩⟩
+
 instance : ParaF List where
   prop := lift
 
@@ -176,6 +182,24 @@ example : ParaT.prop (@f : ∀ {α}, List α → List α) =
     ∀ l l', lift r l l' →
       lift r (f l) (f l')
 := rfl
+
+example : ParaT.prop (@List.reverse) := by
+  intro _ _ r
+  let rec h : ∀ l l', lift r l l' → lift r l.reverse l'.reverse
+  | [], [], _ => by parametric
+  | x::xs, y::ys, ⟨_, _⟩ => by
+    simp only [List.reverse_cons, ← List.concat_eq_append]
+    apply lift_concat
+    parametric h
+  exact h
+
+example : ParaT.prop (@List.dropLast) := by
+  intro _ _ r
+  let rec h : ∀ l l', lift r l l' → lift r l.dropLast l'.dropLast
+  | [], [], _ => by parametric
+  | _::[], _::[], _ => by parametric
+  | _::_::_, _::_::_, ⟨_, _⟩ => by parametric h
+  exact h
 
 example (f : Para (∀ {α}, List α → List α)) (g : α → β) (l) : (f l).map g = f (l.map g) :=
   lift_to_map (f.2 _ l _ (lift_map g l))
@@ -186,6 +210,36 @@ example : ParaT.prop (@f : ∀ {α}, (α → Bool) → List α → List α) =
       ∀ l l', lift r l l' →
         lift r (f g l) (f h l')
 := rfl
+
+example : ParaT.prop (@List.filter) := by
+  intro _ _ r g h hgh
+  let rec h : ∀ l l', lift r l l' → lift r (l.filter g) (l'.filter h)
+  | [], [], _ => by parametric
+  | x::_, y::_, ⟨h', _⟩ => by
+    unfold List.filter
+    rw [hgh x y h']
+    parametric h
+  exact h
+
+example : ParaT.prop (@List.takeWhile) := by
+  intro _ _ r g h hgh
+  let rec h : ∀ l l', lift r l l' → lift r (l.takeWhile g) (l'.takeWhile h)
+  | [], [], _ => by parametric
+  | x::_, y::_, ⟨h', _⟩ => by
+    unfold List.takeWhile
+    rw [hgh x y h']
+    parametric h
+  exact h
+
+example : ParaT.prop (@List.dropWhile) := by
+  intro _ _ r g h hgh
+  let rec h : ∀ l l', lift r l l' → lift r (l.dropWhile g) (l'.dropWhile h)
+  | [], [], _ => by parametric
+  | x::_, y::_, ⟨h', _⟩ => by
+    unfold List.dropWhile
+    rw [hgh x y h']
+    parametric h
+  exact h
 
 example (f : Para (∀ {α}, (α → Bool) → List α → List α)) (g : α → β) (h l) : (f (h ∘ g) l).map g = f h (l.map g) :=
   lift_to_map (f.2 (λ x y => g x = y) _ h (λ _ _ => congrArg h) l _ (lift_map g l))

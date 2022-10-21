@@ -118,6 +118,12 @@ def Fin2.cases' {α : Sort u} (zero : α) (succ : Fin2 n → α) (i : Fin2 n.suc
 def Fin2.cases {α : Fin2 n.succ → Sort u} (zero : α zero) (succ : (i : Fin2 n) → α (succ i)) (i) : α i :=
   @rec (@Nat.rec _ (λ _ => PEmpty) λ n _ i => {α : _ → Sort u} → α .zero → (∀ i, α (.succ i)) → α i) (λ zero _ => zero) (λ i _ _ _ succ => succ i) _ i α zero succ
 
+@[simp] theorem Fin2.cases'.zero (zero succ) : @Fin2.cases' n α zero succ .zero = zero := rfl
+@[simp] theorem Fin2.cases'.succ (zero succ i) : @Fin2.cases' n α zero succ (.succ i) = succ i := rfl
+
+@[simp] theorem Fin2.cases.zero (zero succ) : @Fin2.cases n α zero succ .zero = zero := rfl
+@[simp] theorem Fin2.cases.succ (zero succ i) : @Fin2.cases n α zero succ (.succ i) = succ i := rfl
+
 def Fin2.cases₁' {α : Sort u} (zero : α) : Fin2 n → α :=
   λ _ => zero
 
@@ -130,30 +136,15 @@ def Fin2.cases₁ {α : Fin2 (.succ .zero) → Sort u} (zero : α zero) : ∀ i,
 def Fin2.cases₂ {α : Fin2 (.succ (.succ .zero)) → Sort u} (zero : α zero) (succ : α (succ .zero)) : ∀ i, α i :=
   cases zero (cases succ elim)
 
-def Fin2.castSucc : Fin2 n → Fin2 n.succ
-  | zero => zero
-  | succ i => succ i.castSucc
+@[simp] theorem Fin2.cases₁'.zero (zero i) : @Fin2.cases₁' n α zero i = zero := rfl
 
-def Fin2.toNat : Fin2 n → Nat
-  | zero => .zero
-  | succ i => .succ i.toNat
+@[simp] theorem Fin2.cases₂'.zero (zero succ) : @Fin2.cases₂' (.succ n) α zero succ .zero = zero := rfl
+@[simp] theorem Fin2.cases₂'.succ (zero succ i) : @Fin2.cases₂' (.succ n) α zero succ (.succ i) = succ := rfl
 
-def Fin2.ofNat : ∀ {n m}, n < m → Fin2 m
-  | .zero, .succ _, _ => zero
-  | .succ _, .succ _, h => succ (ofNat (Nat.lt_of_succ_lt_succ h))
+@[simp] theorem Fin2.cases₁.zero (zero) : @Fin2.cases₁ α zero .zero = zero := rfl
 
-instance : Coe (Fin2 n) Nat where
-  coe := Fin2.toNat
-
-instance : Repr (Fin2 n) where
-  reprPrec i := reprPrec i.toNat
-
-attribute [class] Nat.le
-attribute [instance] Nat.le.refl
-instance : ∀ {n m}, [Nat.le n m] → Nat.le n m.succ := @Nat.le.step
-
-instance [I : Nat.le n.succ m] : OfNat (Fin2 m) n where
-  ofNat := .ofNat I
+@[simp] theorem Fin2.cases₂.zero (zero succ) : @Fin2.cases₂ α zero succ .zero = zero := rfl
+@[simp] theorem Fin2.cases₂.succ (zero succ) : @Fin2.cases₂ α zero succ (.succ .zero) = succ := rfl
 
 theorem forallext {α : Sort u} {β β' : α → Sort v} (h : ∀ x, β x = β' x) : (∀ x, β x) = ∀ x, β' x :=
   (funext h : β = β') ▸ rfl
@@ -188,3 +179,7 @@ def evalDestruct : Lean.Elab.Tactic.Tactic
       let t := Lean.mkAppN t newMVars
       Lean.Elab.Tactic.replaceMainGoal (← mvarId.casesRec (Lean.Meta.isDefEq t ∘ Lean.LocalDecl.type))
   | _ => Lean.Elab.throwUnsupportedSyntax
+
+set_option hygiene false in
+macro "parametric" ids:(colGt ident)* : tactic =>
+  `(tactic| (destruct Para; repeat (first | intro _ | apply_assumption | split | constructor $[| apply $ids]*)))
