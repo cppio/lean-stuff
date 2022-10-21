@@ -1,5 +1,59 @@
 import Lean
 
+section
+
+open Lean Lean.Meta
+
+private def modifyLocalDecl [Monad M] (lctx : LocalContext) (e : Expr) (f : LocalDecl → M LocalDecl) : M LocalContext :=
+  match lctx with
+  | { fvarIdToDecl := map, decls := decls } =>
+    match lctx.findFVar? e with
+    | none      => return lctx
+    | some decl => do
+      let decl ← f decl
+      return { fvarIdToDecl := map.insert decl.fvarId decl
+               decls        := decls.set decl.index decl }
+
+private partial def reduceStar (e : Expr) : MetaM Expr :=
+  let rec visit (e : Expr) : MonadCacheT Expr Expr MetaM Expr :=
+    checkCache e fun _ => withIncRecDepth do
+      let e ← whnf e
+      match e with
+      | .app .. =>
+        let f     ← visit e.getAppFn
+        let mut args  := e.getAppArgs
+        for i in [:args.size] do
+          args ← args.modifyM i visit
+        return mkAppN f args
+      | .lam ..        => lambdaTelescope e fun xs b => do
+        let mut lctx ← getLCtx
+        for x in xs do
+          lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
+        withLCtx lctx (← getLocalInstances) do
+          mkLambdaFVars xs (← visit b)
+      | .forallE ..    => forallTelescope e fun xs b => do
+        let mut lctx ← getLCtx
+        for x in xs do
+          lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
+        withLCtx lctx (← getLocalInstances) do
+          mkForallFVars xs (← visit b)
+      | .proj n i s .. => return mkProj n i (← visit s)
+      | _                  => return e
+  withTheReader Core.Context (fun ctx => { ctx with options := ctx.options.setBool `smartUnfolding false }) <|
+    withTransparency (mode := .all) <|
+      visit e |>.run
+
+open Elab.Command Elab.Term
+
+elab tk:"#reduce*" term:term : command =>
+  withoutModifyingEnv <| runTermElabM fun _ => withDeclName `_reduceStar do
+    let e ← elabTerm term none
+    synthesizeSyntheticMVarsNoPostponing
+    let e ← levelMVarToParam (← instantiateMVars e)
+    logInfoAt tk (← reduceStar e)
+
+end
+
 structure Equiv (α : Sort u) (β : Sort v) where
   toFun : α → β
   invFun : β → α
@@ -37,11 +91,29 @@ private def Fin2.rec' {motive : ∀ n, Fin2 n → Sort u} (zero : ∀ {n}, motiv
 
 attribute [implemented_by Fin2.rec'] Fin2.rec
 
-def Fin2.elim {α : Fin2 .zero → Sort u} : (i : Fin2 .zero) → α i :=
-  @rec (@Nat.rec _ α λ _ _ _ => PUnit) PUnit.unit (λ _ _ => PUnit.unit) .zero
+def Fin2.elim' {α : Sort u} : Fin2 .zero → α :=
+  @rec (λ n _ => n.rec α λ _ _ => PUnit) PUnit.unit (λ _ _ => PUnit.unit) _
 
-def Fin2.cases {α : Fin2 n.succ → Sort u} (zero : α zero) (succ : (i : Fin2 n) → α (succ i)) (i : Fin2 n.succ) : α i :=
-  @rec (@Nat.rec _ (λ _ => PEmpty) λ n _ i => (α : Fin2 n.succ → Sort u) → α .zero → (∀ i, α (.succ i)) → α i) (λ _ zero _ => zero) (λ i _ _ _ succ => succ i) n.succ i α zero succ
+def Fin2.elim {α : Fin2 .zero → Sort u} : ∀ i, α i :=
+  @rec (@Nat.rec _ α λ _ _ _ => PUnit) PUnit.unit (λ _ _ => PUnit.unit) _
+
+def Fin2.cases' {α : Sort u} (zero : α) (succ : Fin2 n → α) (i : Fin2 n.succ) : α :=
+  @rec (λ n _ => n.rec PEmpty λ n _ => (Fin2 n → α) → α) (λ _ => zero) (λ i _ succ => succ i) _ i succ
+
+def Fin2.cases {α : Fin2 n.succ → Sort u} (zero : α zero) (succ : (i : Fin2 n) → α (succ i)) (i) : α i :=
+  @rec (@Nat.rec _ (λ _ => PEmpty) λ n _ i => {α : _ → Sort u} → α .zero → (∀ i, α (.succ i)) → α i) (λ zero _ => zero) (λ i _ _ _ succ => succ i) _ i α zero succ
+
+def Fin2.cases₁' {α : Sort u} (zero : α) : Fin2 n → α :=
+  λ _ => zero
+
+def Fin2.cases₂' {α : Sort u} (zero : α) (succ : α) : Fin2 n → α :=
+  @rec (λ _ _ => α) zero (λ _ _ => succ) _
+
+def Fin2.cases₁ {α : Fin2 (.succ .zero) → Sort u} (zero : α zero) : ∀ i, α i :=
+  cases zero elim
+
+def Fin2.cases₂ {α : Fin2 (.succ (.succ .zero)) → Sort u} (zero : α zero) (succ : α (succ .zero)) : ∀ i, α i :=
+  cases zero (cases succ elim)
 
 def Fin2.castSucc : Fin2 n → Fin2 n.succ
   | zero => zero
@@ -100,54 +172,4 @@ def evalDestruct : Lean.Elab.Tactic.Tactic
       let (newMVars, _, _) ← Lean.Meta.forallMetaTelescope (← Lean.Meta.inferType t)
       let t := Lean.mkAppN t newMVars
       Lean.Elab.Tactic.replaceMainGoal (← mvarId.casesRec (Lean.Meta.isDefEq t ∘ Lean.LocalDecl.type))
-  | _ => Lean.Elab.throwUnsupportedSyntax
-
-def modifyLocalDecl [Monad M] (lctx : Lean.LocalContext) (e : Lean.Expr) (f : Lean.LocalDecl → M Lean.LocalDecl) : M Lean.LocalContext :=
-  match lctx with
-  | { fvarIdToDecl := map, decls := decls } =>
-    match lctx.findFVar? e with
-    | none      => return lctx
-    | some decl => do
-      let decl ← f decl
-      return { fvarIdToDecl := map.insert decl.fvarId decl
-               decls        := decls.set decl.index decl }
-
-partial def reduceAll (e : Lean.Expr) : Lean.MetaM Lean.Expr :=
-  let rec visit (e : Lean.Expr) : Lean.MonadCacheT Lean.Expr Lean.Expr Lean.MetaM Lean.Expr :=
-    Lean.checkCache e fun _ => Lean.Core.withIncRecDepth do
-      let e ← Lean.Meta.whnf e
-      match e with
-      | Lean.Expr.app .. =>
-        let f     ← visit e.getAppFn
-        let mut args  := e.getAppArgs
-        for i in [:args.size] do
-          args ← args.modifyM i visit
-        return Lean.mkAppN f args
-      | Lean.Expr.lam ..        => Lean.Meta.lambdaTelescope e fun xs b => do
-        let mut lctx ← Lean.getLCtx
-        for x in xs do
-          lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
-        Lean.Meta.withLCtx lctx (← Lean.Meta.getLocalInstances) do
-          Lean.Meta.mkLambdaFVars xs (← visit b)
-      | Lean.Expr.forallE ..    => Lean.Meta.forallTelescope e fun xs b => do
-        let mut lctx ← Lean.getLCtx
-        for x in xs do
-          lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
-        Lean.Meta.withLCtx lctx (← Lean.Meta.getLocalInstances) do
-          Lean.Meta.mkForallFVars xs (← visit b)
-      | Lean.Expr.proj n i s .. => return Lean.mkProj n i (← visit s)
-      | _                  => return e
-  withTheReader Lean.Core.Context (fun ctx => { ctx with options := ctx.options.setBool `smartUnfolding false }) <|
-    Lean.Meta.withTransparency (mode := .all) <|
-      visit e |>.run
-
-syntax (name := reduceStar) "#reduce*" term : command
-
-@[command_elab reduceStar]
-def elabReduceStar : Lean.Elab.Command.CommandElab
-  | `(#reduce*%$tk $term) => Lean.withoutModifyingEnv <| Lean.Elab.Command.runTermElabM fun _ => Lean.Elab.Term.withDeclName `_reduceAll do
-    let e ← Lean.Elab.Term.elabTerm term none
-    Lean.Elab.Term.synthesizeSyntheticMVarsNoPostponing
-    let e ← Lean.Elab.Term.levelMVarToParam (← Lean.instantiateMVars e)
-    Lean.logInfoAt tk (← reduceAll e)
   | _ => Lean.Elab.throwUnsupportedSyntax

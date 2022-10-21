@@ -1,7 +1,7 @@
 import Parametric
 
-class ParaF (τ : Type u → Type u) :=
-  prop : ∀ {α β}, (α → β → Prop) → τ α → τ β → Prop
+class ParaF (ϕ : Type u → Type u) :=
+  prop : ∀ {α β}, (α → β → Prop) → ϕ α → ϕ β → Prop
 
 instance : ParaF λ α => α where
   prop r := r
@@ -9,13 +9,13 @@ instance : ParaF λ α => α where
 instance : ParaF λ _ => α where
   prop _ := Eq
 
-instance [ParaF τ] [ParaF τ'] : ParaF λ α => τ α → τ' α where
-  prop r f f' := ∀ x x', ParaF.prop r x x' → ParaF.prop r (f x) (f' x')
+instance [ParaF ϕ] [ParaF φ] : ParaF λ α => ϕ α → φ α where
+  prop r f g := ∀ x y, ParaF.prop r x y → ParaF.prop r (f x) (g y)
 
 class ParaT (α : Type u) :=
   prop : α → Prop
 
-instance [ParaF τ] : ParaT (∀ {α}, τ α) where
+instance [ParaF ϕ] : ParaT (∀ {α}, ϕ α) where
   prop f := ∀ {α β} (r : α → β → Prop), ParaF.prop r f f
 
 def Para (α) [I : ParaT α] := Subtype I.prop
@@ -23,7 +23,8 @@ def Para (α) [I : ParaT α] := Subtype I.prop
 instance [ParaT α] : CoeFun (Para α) λ _ => α where
   coe := Subtype.val
 
-macro "parametric" : tactic => `(tactic| (destruct Para; repeat (first | intro _ | apply_assumption)))
+macro "parametric" : tactic =>
+  `(tactic| (destruct Para; repeat (first | intro _ | apply_assumption)))
 
 def Para.mk [ParaT α] (x : α) (h : ParaT.prop x := by parametric) : Para α := ⟨x, h⟩
 
