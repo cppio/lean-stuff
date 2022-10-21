@@ -14,7 +14,7 @@ private def modifyLocalDecl [Monad M] (lctx : LocalContext) (e : Expr) (f : Loca
       return { fvarIdToDecl := map.insert decl.fvarId decl
                decls        := decls.set decl.index decl }
 
-private partial def reduceStar (e : Expr) : MetaM Expr :=
+partial def reduceStar (e : Expr) : MetaM Expr :=
   let rec visit (e : Expr) : MonadCacheT Expr Expr MetaM Expr :=
     checkCache e fun _ => withIncRecDepth do
       let e ← whnf e
@@ -42,6 +42,21 @@ private partial def reduceStar (e : Expr) : MetaM Expr :=
   withTheReader Core.Context (fun ctx => { ctx with options := ctx.options.setBool `smartUnfolding false }) <|
     withTransparency (mode := .all) <|
       visit e |>.run
+
+private def nameCmp : List Name → List Name → Ordering
+  | [], [] => .eq
+  | [], _ => .lt
+  | _, [] => .gt
+  | n₁ :: s₁, n₂ :: s₂ =>
+    match n₁.cmp n₂ with
+    | .eq => nameCmp s₁ s₂
+    | ord => ord
+
+elab tk:"#print prefix" id:ident : command => do
+  let cs := (← getEnv).constants.fold (λ cs name info =>
+    if id.getId.isPrefixOf name then cs.push (name, info.type) else cs) #[]
+  let cs := cs.qsort λ x y => nameCmp x.1.components y.1.components == .lt
+  logInfoAt tk (.joinSep (cs.map λ (name, type) => name ++ " : " ++ type).toList Format.line)
 
 open Elab.Command Elab.Term
 

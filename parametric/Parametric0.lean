@@ -152,3 +152,42 @@ example : Nat' ≃ Nat where
       <;> exact this
 
 end Nat
+
+section List
+
+def lift (r : α → β → Prop) : List α → List β → Prop
+  | [],    []    => True
+  | x::xs, y::ys => r x y ∧ lift r xs ys
+  | _,     _     => False
+
+theorem lift_map (g : α → β) : ∀ l, lift (λ x y => g x = y) l (l.map g)
+  | [] => trivial
+  | _::l => ⟨rfl, lift_map g l⟩
+
+theorem lift_to_map {g : α → β} : ∀ {l l'}, lift (λ x y => g x = y) l l' → l.map g = l'
+  | [],   [],   _ => rfl
+  | _::_, _::_, h => congrArg₂ _ h.1 (lift_to_map h.2)
+
+instance : ParaF List where
+  prop := lift
+
+example : ParaT.prop (@f : ∀ {α}, List α → List α) =
+  ∀ {α β} (r : α → β → Prop),
+    ∀ l l', lift r l l' →
+      lift r (f l) (f l')
+:= rfl
+
+example (f : Para (∀ {α}, List α → List α)) (g : α → β) (l) : (f l).map g = f (l.map g) :=
+  lift_to_map (f.2 _ l _ (lift_map g l))
+
+example : ParaT.prop (@f : ∀ {α}, (α → Bool) → List α → List α) =
+  ∀ {α β} (r : α → β → Prop),
+    ∀ g h, (∀ x y, r x y → g x = h y) →
+      ∀ l l', lift r l l' →
+        lift r (f g l) (f h l')
+:= rfl
+
+example (f : Para (∀ {α}, (α → Bool) → List α → List α)) (g : α → β) (h l) : (f (h ∘ g) l).map g = f h (l.map g) :=
+  lift_to_map (f.2 (λ x y => g x = y) _ h (λ _ _ => congrArg h) l _ (lift_map g l))
+
+end List
