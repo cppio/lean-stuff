@@ -174,8 +174,8 @@ theorem lift_concat : ∀ {xs ys}, lift r (x::xs) (y::ys) → lift r (xs.concat 
   | [], [], h => h
   | _::_, _::_, ⟨h₁, h₂, h₃⟩ => ⟨h₂, lift_concat ⟨h₁, h₃⟩⟩
 
-instance : ParaF List where
-  prop := lift
+instance [ParaF ϕ] : ParaF no_index λ α => List (ϕ α) where
+  prop r := lift (ParaF.prop r)
 
 example : ParaT.prop (@f : ∀ {α}, List α → List α) =
   ∀ {α β} (r : α → β → Prop),
@@ -243,5 +243,12 @@ example : ParaT.prop (@List.dropWhile) := by
 
 example (f : Para (∀ {α}, (α → Bool) → List α → List α)) (g : α → β) (h l) : (f (h ∘ g) l).map g = f h (l.map g) :=
   lift_to_map (f.2 (λ x y => g x = y) _ h (λ _ _ => congrArg h) l _ (lift_map g l))
+
+example : ParaT.prop λ {α} x => List.map (λ f : α → α => f x) := by
+  intro α β r x y _
+  let rec h : ∀ l l', lift (λ (f : α → α) (g : β → β) => ∀ x y, r x y → r (f x) (g y)) l l' → lift r (l.map λ f => f x) (l'.map λ g => g y)
+  | [], [], _ => by parametric
+  | _::_, _::_, ⟨_, _⟩ => by parametric h
+  exact h
 
 end List

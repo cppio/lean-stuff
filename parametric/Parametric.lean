@@ -100,51 +100,55 @@ inductive Fin2 : Nat → Type
   | succ : Fin2 n → Fin2 n.succ
   deriving DecidableEq
 
-private def Fin2.rec' {motive : ∀ n, Fin2 n → Sort u} (zero : ∀ {n}, motive (.succ n) zero) (succ : ∀ {n} i, motive n i → motive n.succ i.succ) {n} : ∀ i, motive n i
+namespace Fin2
+
+private def rec' {motive : ∀ n, Fin2 n → Sort u} (zero : ∀ {n}, motive (.succ n) zero) (succ : ∀ {n} i, motive n i → motive n.succ i.succ) {n} : ∀ i, motive n i
   | .zero => zero
   | .succ i => succ i (rec' zero succ i)
 
-attribute [implemented_by Fin2.rec'] Fin2.rec
+attribute [implemented_by rec'] rec
 
-def Fin2.elim' {α : Sort u} : Fin2 .zero → α :=
+def elim' {α : Sort u} : Fin2 .zero → α :=
   @rec (λ n _ => n.rec α λ _ _ => PUnit) PUnit.unit (λ _ _ => PUnit.unit) _
 
-def Fin2.elim {α : Fin2 .zero → Sort u} : ∀ i, α i :=
+def elim {α : Fin2 .zero → Sort u} : ∀ i, α i :=
   @rec (@Nat.rec _ α λ _ _ _ => PUnit) PUnit.unit (λ _ _ => PUnit.unit) _
 
-def Fin2.cases' {α : Sort u} (zero : α) (succ : Fin2 n → α) (i : Fin2 n.succ) : α :=
+def cases' {α : Sort u} (zero : α) (succ : Fin2 n → α) (i : Fin2 n.succ) : α :=
   @rec (λ n _ => n.rec PEmpty λ n _ => (Fin2 n → α) → α) (λ _ => zero) (λ i _ succ => succ i) _ i succ
 
-def Fin2.cases {α : Fin2 n.succ → Sort u} (zero : α zero) (succ : (i : Fin2 n) → α (succ i)) (i) : α i :=
+def cases {α : Fin2 n.succ → Sort u} (zero : α zero) (succ : (i : Fin2 n) → α (succ i)) (i) : α i :=
   @rec (@Nat.rec _ (λ _ => PEmpty) λ n _ i => {α : _ → Sort u} → α .zero → (∀ i, α (.succ i)) → α i) (λ zero _ => zero) (λ i _ _ _ succ => succ i) _ i α zero succ
 
-@[simp] theorem Fin2.cases'.zero (zero succ) : @Fin2.cases' n α zero succ .zero = zero := rfl
-@[simp] theorem Fin2.cases'.succ (zero succ i) : @Fin2.cases' n α zero succ (.succ i) = succ i := rfl
+@[simp] theorem cases'.zero (zero succ) : @cases' n α zero succ .zero = zero := rfl
+@[simp] theorem cases'.succ (zero succ i) : @cases' n α zero succ (.succ i) = succ i := rfl
 
-@[simp] theorem Fin2.cases.zero (zero succ) : @Fin2.cases n α zero succ .zero = zero := rfl
-@[simp] theorem Fin2.cases.succ (zero succ i) : @Fin2.cases n α zero succ (.succ i) = succ i := rfl
+@[simp] theorem cases.zero (zero succ) : @cases n α zero succ .zero = zero := rfl
+@[simp] theorem cases.succ (zero succ i) : @cases n α zero succ (.succ i) = succ i := rfl
 
-def Fin2.cases₁' {α : Sort u} (zero : α) : Fin2 n → α :=
+def cases₁' {α : Sort u} (zero : α) : Fin2 n → α :=
   λ _ => zero
 
-def Fin2.cases₂' {α : Sort u} (zero : α) (succ : α) : Fin2 n → α :=
+def cases₂' {α : Sort u} (zero : α) (succ : α) : Fin2 n → α :=
   @rec (λ _ _ => α) zero (λ _ _ => succ) _
 
-def Fin2.cases₁ {α : Fin2 (.succ .zero) → Sort u} (zero : α zero) : ∀ i, α i :=
+def cases₁ {α : Fin2 (.succ .zero) → Sort u} (zero : α zero) : ∀ i, α i :=
   cases zero elim
 
-def Fin2.cases₂ {α : Fin2 (.succ (.succ .zero)) → Sort u} (zero : α zero) (succ : α (succ .zero)) : ∀ i, α i :=
+def cases₂ {α : Fin2 (.succ (.succ .zero)) → Sort u} (zero : α zero) (succ : α (succ .zero)) : ∀ i, α i :=
   cases zero (cases succ elim)
 
-@[simp] theorem Fin2.cases₁'.zero (zero i) : @Fin2.cases₁' n α zero i = zero := rfl
+@[simp] theorem cases₁'.zero (zero i) : @cases₁' n α zero i = zero := rfl
 
-@[simp] theorem Fin2.cases₂'.zero (zero succ) : @Fin2.cases₂' (.succ n) α zero succ .zero = zero := rfl
-@[simp] theorem Fin2.cases₂'.succ (zero succ i) : @Fin2.cases₂' (.succ n) α zero succ (.succ i) = succ := rfl
+@[simp] theorem cases₂'.zero (zero succ) : @cases₂' (.succ n) α zero succ .zero = zero := rfl
+@[simp] theorem cases₂'.succ (zero succ i) : @cases₂' (.succ n) α zero succ (.succ i) = succ := rfl
 
-@[simp] theorem Fin2.cases₁.zero (zero) : @Fin2.cases₁ α zero .zero = zero := rfl
+@[simp] theorem cases₁.zero (zero) : @cases₁ α zero .zero = zero := rfl
 
-@[simp] theorem Fin2.cases₂.zero (zero succ) : @Fin2.cases₂ α zero succ .zero = zero := rfl
-@[simp] theorem Fin2.cases₂.succ (zero succ) : @Fin2.cases₂ α zero succ (.succ .zero) = succ := rfl
+@[simp] theorem cases₂.zero (zero succ) : @cases₂ α zero succ .zero = zero := rfl
+@[simp] theorem cases₂.succ (zero succ) : @cases₂ α zero succ (.succ .zero) = succ := rfl
+
+end Fin2
 
 theorem forallext {α : Sort u} {β β' : α → Sort v} (h : ∀ x, β x = β' x) : (∀ x, β x) = ∀ x, β' x :=
   (funext h : β = β') ▸ rfl
