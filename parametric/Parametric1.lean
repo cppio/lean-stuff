@@ -30,7 +30,46 @@ def Para (α) [I : ParaT α] := Subtype I.prop
 instance [ParaT α] : CoeFun (Para α) λ _ => α where
   coe := Subtype.val
 
+macro_rules | `(tactic| para_step) => `(tactic| destruct Para)
+
 def Para.mk [ParaT α] (x : α) (h : ParaT.prop x := by parametric) : Para α := ⟨x, h⟩
+
+section Nat
+
+example : ParaT.prop (@n : ∀ {α}, α → (α → α) → α) =
+  ∀ {α β} (r : α → β → Prop),
+    ∀ z z', r z z' →
+      ∀ s s', (∀ x x', r x x' → r (s x) (s' x')) →
+        r (n z s) (n z' s')
+:= rfl
+
+abbrev Nat' := Para (∀ {α}, α → (α → α) → α)
+
+@[simp] def Nat'.zero            : Nat' := .mk λ z _ => z
+@[simp] def Nat'.succ (n : Nat') : Nat' := .mk λ z s => s (n z s)
+
+def Nat'.ofNat : Nat → Nat'
+  | .zero   => zero
+  | .succ n => succ (ofNat n)
+
+example : Nat' ≃ Nat where
+  toFun n := n .zero .succ
+  invFun := .ofNat
+  right_inv n := by
+    induction n
+    case zero => rfl
+    case succ ih => exact congrArg Nat.succ ih
+  left_inv | ⟨_, h⟩ => by
+    unfold Nat'.ofNat
+    dsimp
+    split
+      <;> rename_i h'
+      <;> congr
+      <;> funext _ z s
+      <;> have := h' ▸ h (λ n x => Nat'.ofNat n z s = x) Nat.zero z rfl Nat.succ s λ _ _ => congrArg s
+      <;> exact this
+
+end Nat
 
 section K
 

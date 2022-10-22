@@ -157,33 +157,36 @@ theorem subst_subst {α : Sort u} {β : α → Sort v} {x x' : α} (y : β x) (h
   cases h
   rfl
 
-syntax (name := applyAssumption) "apply_assumption" : tactic
-
-@[tactic applyAssumption]
-def evalApplyAssumption : Lean.Elab.Tactic.Tactic := λ _ => do
+elab "apply_assumption" : tactic => do
   let mvarId ← Lean.Elab.Tactic.getMainGoal
   mvarId.withContext do
+    let mvarIds? ← (← Lean.getLCtx).findDeclRevM? fun decl => do
+      if decl.isAuxDecl then return none
+      try mvarId.apply decl.toExpr
+      catch _ => return none
+    match mvarIds? with
+    | some mvarIds => Lean.Elab.Tactic.replaceMainGoal mvarIds
+    | none => Lean.Meta.throwTacticEx `apply_assumption mvarId ""
+
+elab "destruct" e:term : tactic => do
+  let mvarId ← Lean.Elab.Tactic.getMainGoal
+  mvarId.withContext do
+    let e ← Lean.Elab.Tactic.elabTerm e none
+    let (newMVars, _, _) ← Lean.Meta.forallMetaTelescope (← Lean.Meta.inferType e)
+    let e := Lean.mkAppN e newMVars
     for decl in ← Lean.getLCtx do
       if decl.isAuxDecl then continue
-      try
-        Lean.Elab.Tactic.replaceMainGoal (← mvarId.apply decl.toExpr)
-        return ()
-      catch _ => pure ()
-    Lean.Meta.throwTacticEx `apply_assumption mvarId ""
+      if ← Lean.Meta.isDefEq e decl.type then
+        Lean.Elab.Tactic.replaceMainGoal ((← mvarId.cases decl.fvarId).map (·.mvarId)).toList
+        return
+    Lean.Meta.throwTacticEx `destruct mvarId ""
 
-syntax (name := destruct) "destruct" term : tactic
+syntax "para_step" : tactic
 
-@[tactic destruct]
-def evalDestruct : Lean.Elab.Tactic.Tactic
-  | `(tactic| destruct $e) => do
-    let mvarId ← Lean.Elab.Tactic.getMainGoal
-    mvarId.withContext do
-      let t ← Lean.Elab.Tactic.elabTerm e none
-      let (newMVars, _, _) ← Lean.Meta.forallMetaTelescope (← Lean.Meta.inferType t)
-      let t := Lean.mkAppN t newMVars
-      Lean.Elab.Tactic.replaceMainGoal (← mvarId.casesRec (Lean.Meta.isDefEq t ∘ Lean.LocalDecl.type))
-  | _ => Lean.Elab.throwUnsupportedSyntax
+macro_rules | `(tactic| para_step) => `(tactic| constructor)
+macro_rules | `(tactic| para_step) => `(tactic| split)
+macro_rules | `(tactic| para_step) => `(tactic| apply_assumption)
+macro_rules | `(tactic| para_step) => `(tactic| intro)
 
-set_option hygiene false in
 macro "parametric" ids:(colGt ident)* : tactic =>
-  `(tactic| (destruct Para; repeat (first | intro _ | apply_assumption | split | constructor $[| apply $ids]*)))
+  `(tactic| (repeat (first | para_step $[| apply $ids]*)))

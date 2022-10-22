@@ -27,6 +27,8 @@ def Para (α) [I : ParaT α] := Subtype I.prop
 instance [ParaT α] : CoeFun (Para α) λ _ => α where
   coe := Subtype.val
 
+macro_rules | `(tactic| para_step) => `(tactic| destruct Para)
+
 def Para.mk [ParaT α] (x : α) (h : ParaT.prop x := by parametric) : Para α := ⟨x, h⟩
 
 section Empty
