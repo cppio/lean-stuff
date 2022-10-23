@@ -185,7 +185,7 @@ example : ParaT.prop (@f : ∀ {α}, List α → List α) =
       lift r (f l) (f l')
 := rfl
 
-example : ParaT.prop (@List.reverse) := by
+example : ParaT.prop @List.reverse := by
   intro _ _ r
   let rec h : ∀ l l', lift r l l' → lift r l.reverse l'.reverse
   | [], [], _ => by parametric
@@ -195,7 +195,7 @@ example : ParaT.prop (@List.reverse) := by
     parametric h
   exact h
 
-example : ParaT.prop (@List.dropLast) := by
+example : ParaT.prop @List.dropLast := by
   intro _ _ r
   let rec h : ∀ l l', lift r l l' → lift r l.dropLast l'.dropLast
   | [], [], _ => by parametric
@@ -213,7 +213,7 @@ example : ParaT.prop (@f : ∀ {α}, (α → Bool) → List α → List α) =
         lift r (f g l) (f h l')
 := rfl
 
-example : ParaT.prop (@List.filter) := by
+example : ParaT.prop @List.filter := by
   intro _ _ r g h hgh
   let rec h : ∀ l l', lift r l l' → lift r (l.filter g) (l'.filter h)
   | [], [], _ => by parametric
@@ -223,7 +223,7 @@ example : ParaT.prop (@List.filter) := by
     parametric h
   exact h
 
-example : ParaT.prop (@List.takeWhile) := by
+example : ParaT.prop @List.takeWhile := by
   intro _ _ r g h hgh
   let rec h : ∀ l l', lift r l l' → lift r (l.takeWhile g) (l'.takeWhile h)
   | [], [], _ => by parametric
@@ -233,7 +233,7 @@ example : ParaT.prop (@List.takeWhile) := by
     parametric h
   exact h
 
-example : ParaT.prop (@List.dropWhile) := by
+example : ParaT.prop @List.dropWhile := by
   intro _ _ r g h hgh
   let rec h : ∀ l l', lift r l l' → lift r (l.dropWhile g) (l'.dropWhile h)
   | [], [], _ => by parametric

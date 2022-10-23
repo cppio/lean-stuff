@@ -110,7 +110,7 @@ example : ParaT.prop (@f : ∀ {α β}, (α → β → β) → β → List α �
           s (f c x l) (f c' x' l')
 := rfl
 
-example : ParaT.prop (@List.foldr) := by
+example : ParaT.prop @List.foldr := by
   intro _ _ r _ _ s c c' _ x x' _
   let rec h : ∀ l l', lift r l l' → s (l.foldr c x) (l'.foldr c' x')
   | [], [], _ => by parametric
