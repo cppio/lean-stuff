@@ -183,10 +183,9 @@ theorem subst_subst {α : Sort u} {β : α → Sort v} {x x' : α} (y : β x) (h
 
 syntax "para_step" : tactic
 
-macro_rules | `(tactic| para_step) => `(tactic| constructor)
 macro_rules | `(tactic| para_step) => `(tactic| split)
-macro_rules | `(tactic| para_step) => `(tactic| apply_assumption)
+macro_rules | `(tactic| para_step) => `(tactic| constructor)
 macro_rules | `(tactic| para_step) => `(tactic| intro)
+macro_rules | `(tactic| para_step) => `(tactic| apply_assumption)
 
-macro "parametric" ids:(colGt ident)* : tactic =>
-  `(tactic| (repeat (first | para_step $[| apply $ids]*)))
+macro "parametric" : tactic => `(tactic| (repeat para_step))

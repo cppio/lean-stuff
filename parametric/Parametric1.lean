@@ -90,17 +90,18 @@ end K
 
 section List
 
-def lift (r : α → β → Prop) : List α → List β → Prop
-  | [],    []    => True
-  | x::xs, y::ys => r x y ∧ lift r xs ys
-  | _,     _     => False
+inductive lift (r : α → β → Prop) : List α → List β → Prop
+  | nil  : lift r [] []
+  | cons : r x y → lift r xs ys → lift r (x :: xs) (y :: ys)
 
 theorem lift_map (g : α → β) : ∀ l, lift (λ x y => g x = y) l (l.map g)
-  | [] => trivial
-  | _::l => ⟨rfl, lift_map g l⟩
+  | [] => .nil
+  | _::l => .cons rfl (lift_map g l)
 
 instance [ParaF ϕ] : ParaF λ α => List (ϕ α) where
   prop α β r := lift (ParaF.prop α β r)
+
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : lift _ _ _); induction h)
 
 example : ParaT.prop (@f : ∀ {α β}, (α → β → β) → β → List α → β) =
   ∀ {α α'} (r : α → α' → Prop) {β β'} (s : β → β' → Prop),
@@ -110,22 +111,11 @@ example : ParaT.prop (@f : ∀ {α β}, (α → β → β) → β → List α �
           s (f c x l) (f c' x' l')
 := rfl
 
-example : ParaT.prop @List.foldr := by
-  intro _ _ r _ _ s c c' _ x x' _
-  let rec h : ∀ l l', lift r l l' → s (l.foldr c x) (l'.foldr c' x')
-  | [], [], _ => by parametric
-  | _::_, _::_, ⟨_, _⟩ => by parametric h
-  exact h
+example : ParaT.prop @List.foldr := by parametric
 
 example (f : Para (∀ {α β}, (α → β → β) → β → List α → β)) (g : α → α') (h : β → β') (c c') (hc : ∀ x y, h (c x y) = c' (g x) (h y)) (x l) : h (f c x l) = f c' (h x) (l.map g) :=
   f.2 (λ x y => g x = y) (λ x y => h x = y) c _ (λ x _ hx y _ hy => hx ▸ hy ▸ hc x y) x _ rfl l _ (lift_map g l)
 
-example : ParaT.prop λ {α β : Type _} x => List.map (λ f : α → β => f x) := by
-  dsimp
-  intro α α' r β β' s x x' hx
-  let rec h : ∀ l l', lift (λ (f : α → β) (g : α' → β') => ∀ x y, r x y → s (f x) (g y)) l l' → lift s (l.map λ f => f x) (l'.map λ g => g x')
-  | [], [], _ => by parametric
-  | _::_, _::_, ⟨_, _⟩ => by parametric h
-  exact h
+example : ParaT.prop λ {α β : Type _} x => List.map (λ f : α → β => f x) := by parametric
 
 end List
