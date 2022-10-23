@@ -2,7 +2,7 @@ import Lean
 
 section
 
-open Lean Lean.Meta
+open Lean Meta
 
 private def modifyLocalDecl [Monad M] (lctx : LocalContext) (e : Expr) (f : LocalDecl → M LocalDecl) : M LocalContext :=
   match lctx with
@@ -43,6 +43,15 @@ partial def reduceStar (e : Expr) : MetaM Expr :=
     withTransparency (mode := .all) <|
       visit e |>.run
 
+open Elab
+
+elab tk:"#reduce*" term:term : command =>
+  withoutModifyingEnv <| Command.runTermElabM fun _ => Term.withDeclName `_reduceStar do
+    let e ← Term.elabTerm term none
+    Term.synthesizeSyntheticMVarsNoPostponing
+    let e ← Term.levelMVarToParam (← instantiateMVars e)
+    logInfoAt tk (← reduceStar e)
+
 private def nameCmp : List Name → List Name → Ordering
   | [], [] => .eq
   | [], _ => .lt
@@ -58,14 +67,29 @@ elab tk:"#print prefix" id:ident : command => do
   let cs := cs.qsort λ x y => nameCmp x.1.components y.1.components == .lt
   logInfoAt tk (.joinSep (cs.map λ (name, type) => name ++ " : " ++ type).toList Format.line)
 
-open Elab.Command Elab.Term
+elab "apply_assumption" : tactic => do
+  let mvarId ← Tactic.getMainGoal
+  mvarId.withContext do
+    let mvarIds? ← (← getLCtx).findDeclRevM? fun decl => do
+      if decl.isAuxDecl then return none
+      try mvarId.apply decl.toExpr
+      catch _ => return none
+    match mvarIds? with
+    | some mvarIds => Tactic.replaceMainGoal mvarIds
+    | none => throwTacticEx `apply_assumption mvarId ""
 
-elab tk:"#reduce*" term:term : command =>
-  withoutModifyingEnv <| runTermElabM fun _ => withDeclName `_reduceStar do
-    let e ← elabTerm term none
-    synthesizeSyntheticMVarsNoPostponing
-    let e ← levelMVarToParam (← instantiateMVars e)
-    logInfoAt tk (← reduceStar e)
+elab "destruct" e:term : tactic => do
+  let mvarId ← Tactic.getMainGoal
+  mvarId.withContext do
+    let e ← Tactic.elabTerm e none
+    let (newMVars, _, _) ← forallMetaTelescope (← inferType e)
+    let e := mkAppN e newMVars
+    for decl in ← getLCtx do
+      if decl.isAuxDecl then continue
+      if ← isDefEq e decl.type then
+        Tactic.replaceMainGoal ((← mvarId.cases decl.fvarId).map (·.mvarId)).toList
+        return
+    throwTacticEx `destruct mvarId ""
 
 end
 
@@ -156,30 +180,6 @@ theorem forallext {α : Sort u} {β β' : α → Sort v} (h : ∀ x, β x = β' 
 theorem subst_subst {α : Sort u} {β : α → Sort v} {x x' : α} (y : β x) (h : x = x') : h.symm ▸ (h ▸ y) = y := by
   cases h
   rfl
-
-elab "apply_assumption" : tactic => do
-  let mvarId ← Lean.Elab.Tactic.getMainGoal
-  mvarId.withContext do
-    let mvarIds? ← (← Lean.getLCtx).findDeclRevM? fun decl => do
-      if decl.isAuxDecl then return none
-      try mvarId.apply decl.toExpr
-      catch _ => return none
-    match mvarIds? with
-    | some mvarIds => Lean.Elab.Tactic.replaceMainGoal mvarIds
-    | none => Lean.Meta.throwTacticEx `apply_assumption mvarId ""
-
-elab "destruct" e:term : tactic => do
-  let mvarId ← Lean.Elab.Tactic.getMainGoal
-  mvarId.withContext do
-    let e ← Lean.Elab.Tactic.elabTerm e none
-    let (newMVars, _, _) ← Lean.Meta.forallMetaTelescope (← Lean.Meta.inferType e)
-    let e := Lean.mkAppN e newMVars
-    for decl in ← Lean.getLCtx do
-      if decl.isAuxDecl then continue
-      if ← Lean.Meta.isDefEq e decl.type then
-        Lean.Elab.Tactic.replaceMainGoal ((← mvarId.cases decl.fvarId).map (·.mvarId)).toList
-        return
-    Lean.Meta.throwTacticEx `destruct mvarId ""
 
 syntax "para_step" : tactic
 
