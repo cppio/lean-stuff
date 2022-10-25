@@ -90,24 +90,24 @@ end K
 
 section List
 
-inductive lift (r : α → β → Prop) : List α → List β → Prop
-  | nil  : lift r [] []
-  | cons : r x y → lift r xs ys → lift r (x :: xs) (y :: ys)
+inductive List.liftRel (r : α → β → Prop) : List α → List β → Prop
+  | nil  : liftRel r [] []
+  | cons : r x y → liftRel r xs ys → liftRel r (x :: xs) (y :: ys)
 
-theorem lift_map (g : α → β) : ∀ l, lift (λ x y => g x = y) l (l.map g)
+theorem lift_map (g : α → β) : ∀ l, List.liftRel (λ x y => g x = y) l (l.map g)
   | [] => .nil
   | _::l => .cons rfl (lift_map g l)
 
 instance [ParaF ϕ] : ParaF λ α => List (ϕ α) where
-  prop α β r := lift (ParaF.prop α β r)
+  prop α β r := List.liftRel (ParaF.prop α β r)
 
-macro_rules | `(tactic| para_step) => `(tactic| intro (h : lift _ _ _); induction h)
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : List.liftRel _ _ _); induction h)
 
 example : ParaT.prop (@f : ∀ {α β}, (α → β → β) → β → List α → β) =
   ∀ {α α'} (r : α → α' → Prop) {β β'} (s : β → β' → Prop),
     ∀ c c', (∀ x x', r x x' → ∀ y y', s y y' → s (c x y) (c' x' y')) →
       ∀ x x', s x x' →
-        ∀ l l', lift r l l' →
+        ∀ l l', List.liftRel r l l' →
           s (f c x l) (f c' x' l')
 := rfl
 
@@ -127,17 +127,17 @@ end List
 
 section Prod
 
-inductive Prod.lift (r : α → α' → Prop) (s : β → β' → Prop) : α × β → α' × β' → Prop
-  | mk : r x x' → s y y' → lift r s (x, y) (x', y')
+inductive Prod.liftRel (r : α → α' → Prop) (s : β → β' → Prop) : α × β → α' × β' → Prop
+  | mk : r x x' → s y y' → liftRel r s (x, y) (x', y')
 
 instance [ParaF ϕ] [ParaF φ] : ParaF.{u} λ α => ϕ α × φ α where
-  prop α β r := Prod.lift (ParaF.prop α β r) (ParaF.prop α β r)
+  prop α β r := Prod.liftRel (ParaF.prop α β r) (ParaF.prop α β r)
 
-macro_rules | `(tactic| para_step) => `(tactic| intro (h : Prod.lift _ _ _ _); induction h)
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : Prod.liftRel _ _ _ _); induction h)
 
 example : ParaT.prop (@f : ∀ {α β}, α × β → α) =
   ∀ {α α'} (r : α → α' → Prop) {β β'} (s : β → β' → Prop),
-    ∀ xy xy', Prod.lift r s xy xy' →
+    ∀ xy xy', Prod.liftRel r s xy xy' →
       r (f xy) (f xy')
 := rfl
 
@@ -149,19 +149,19 @@ end Prod
 
 section Sum
 
-inductive Sum.lift (r : α → α' → Prop) (s : β → β' → Prop) : α ⊕ β → α' ⊕ β' → Prop
-  | inl : r x x' → lift r s (.inl x) (.inl x')
-  | inr : s y y' → lift r s (.inr y) (.inr y')
+inductive Sum.liftRel (r : α → α' → Prop) (s : β → β' → Prop) : α ⊕ β → α' ⊕ β' → Prop
+  | inl : r x x' → liftRel r s (.inl x) (.inl x')
+  | inr : s y y' → liftRel r s (.inr y) (.inr y')
 
 instance [ParaF ϕ] [ParaF φ] : ParaF.{u} λ α => ϕ α ⊕ φ α where
-  prop α β r := Sum.lift (ParaF.prop α β r) (ParaF.prop α β r)
+  prop α β r := Sum.liftRel (ParaF.prop α β r) (ParaF.prop α β r)
 
-macro_rules | `(tactic| para_step) => `(tactic| intro (h : Sum.lift _ _ _ _); induction h)
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : Sum.liftRel _ _ _ _); induction h)
 
 example : ParaT.prop (@f : ∀ {α β}, α → α ⊕ β) =
   ∀ {α α'} (r : α → α' → Prop) {β β'} (s : β → β' → Prop),
     ∀ x x', r x x' →
-      Sum.lift r s (f x) (f x')
+      Sum.liftRel r s (f x) (f x')
 := rfl
 
 example : ParaT.prop @Sum.inl := by parametric

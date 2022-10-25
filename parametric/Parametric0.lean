@@ -158,31 +158,31 @@ end Nat
 
 section List
 
-inductive lift (r : α → β → Prop) : List α → List β → Prop
-  | nil  : lift r [] []
-  | cons : r x y → lift r xs ys → lift r (x :: xs) (y :: ys)
+inductive List.liftRel (r : α → β → Prop) : List α → List β → Prop
+  | nil  : liftRel r [] []
+  | cons : r x y → liftRel r xs ys → liftRel r (x :: xs) (y :: ys)
 
-theorem lift_map (g : α → β) : ∀ l, lift (λ x y => g x = y) l (l.map g)
+theorem lift_map (g : α → β) : ∀ l, List.liftRel (λ x y => g x = y) l (l.map g)
   | [] => .nil
   | _::l => .cons rfl (lift_map g l)
 
-theorem lift_to_map {g : α → β} : lift (λ x y => g x = y) xs ys → xs.map g = ys
+theorem lift_to_map {g : α → β} : List.liftRel (λ x y => g x = y) xs ys → xs.map g = ys
   | .nil => rfl
   | .cons h h' => congrArg₂ _ h (lift_to_map h')
 
-theorem lift_concat : lift r (x::xs) (y::ys) → lift r (xs.concat x) (ys.concat y)
+theorem lift_concat : List.liftRel r (x::xs) (y::ys) → List.liftRel r (xs.concat x) (ys.concat y)
   | .cons h .nil => .cons h .nil
   | .cons h (.cons h₁ h₂) => .cons h₁ (lift_concat (.cons h h₂))
 
 instance [ParaF ϕ] : ParaF no_index λ α => List (ϕ α) where
-  prop r := lift (ParaF.prop r)
+  prop r := List.liftRel (ParaF.prop r)
 
-macro_rules | `(tactic| para_step) => `(tactic| intro (h : lift _ _ _); induction h)
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : List.liftRel _ _ _); induction h)
 
 example : ParaT.prop (@f : ∀ {α}, List α → List α) =
   ∀ {α β} (r : α → β → Prop),
-    ∀ xs ys, lift r xs ys →
-      lift r (f xs) (f ys)
+    ∀ xs ys, List.liftRel r xs ys →
+      List.liftRel r (f xs) (f ys)
 := rfl
 
 example : ParaT.prop @List.reverse := by
@@ -203,8 +203,8 @@ example (f : Para (∀ {α}, List α → List α)) (g : α → β) (l) : (f l).m
 example : ParaT.prop (@f : ∀ {α}, (α → Bool) → List α → List α) =
   ∀ {α β} (r : α → β → Prop),
     ∀ g h, (∀ x y, r x y → g x = h y) →
-      ∀ xs ys, lift r xs ys →
-        lift r (f g xs) (f h ys)
+      ∀ xs ys, List.liftRel r xs ys →
+        List.liftRel r (f g xs) (f h ys)
 := rfl
 
 example : ParaT.prop @List.filter := by
