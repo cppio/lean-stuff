@@ -30,7 +30,7 @@ partial def reduceStar (e : Expr) : MetaM Expr :=
         for x in xs do
           lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
         withLCtx lctx (← getLocalInstances) do
-          mkLambdaFVars xs (← visit b)
+          return (← mkLambdaFVars xs (← visit b)).eta
       | .forallE ..    => forallTelescope e fun xs b => do
         let mut lctx ← getLCtx
         for x in xs do

@@ -112,6 +112,11 @@ example : ParaT.prop (@f : ∀ {α β}, (α → β → β) → β → List α �
 := rfl
 
 example : ParaT.prop @List.foldr := by parametric
+example : ParaT.prop @List.foldl := by
+  intro _ _ _ _ _ _ _ _ _ x x' hx _ _ h
+  revert x x' hx
+  revert h
+  parametric
 
 example (f : Para (∀ {α β}, (α → β → β) → β → List α → β)) (g : α → α') (h : β → β') (c c') (hc : ∀ x y, h (c x y) = c' (g x) (h y)) (x l) : h (f c x l) = f c' (h x) (l.map g) :=
   f.2 (λ x y => g x = y) (λ x y => h x = y) c _ (λ x _ hx y _ hy => hx ▸ hy ▸ hc x y) x _ rfl l _ (lift_map g l)
@@ -119,3 +124,50 @@ example (f : Para (∀ {α β}, (α → β → β) → β → List α → β)) (
 example : ParaT.prop λ {α β : Type _} x => List.map (λ f : α → β => f x) := by parametric
 
 end List
+
+section Prod
+
+inductive Prod.lift (r : α → α' → Prop) (s : β → β' → Prop) : α × β → α' × β' → Prop
+  | mk : r x x' → s y y' → lift r s (x, y) (x', y')
+
+instance [ParaF ϕ] [ParaF φ] : ParaF.{u} λ α => ϕ α × φ α where
+  prop α β r := Prod.lift (ParaF.prop α β r) (ParaF.prop α β r)
+
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : Prod.lift _ _ _ _); induction h)
+
+example : ParaT.prop (@f : ∀ {α β}, α × β → α) =
+  ∀ {α α'} (r : α → α' → Prop) {β β'} (s : β → β' → Prop),
+    ∀ xy xy', Prod.lift r s xy xy' →
+      r (f xy) (f xy')
+:= rfl
+
+example : ParaT.prop @Prod.fst := by parametric
+
+example : ParaT.prop λ {α β : Type _} (fx : (α → β) × α) => (match fx with | .mk f x => f x : β) := by parametric
+
+end Prod
+
+section Sum
+
+inductive Sum.lift (r : α → α' → Prop) (s : β → β' → Prop) : α ⊕ β → α' ⊕ β' → Prop
+  | inl : r x x' → lift r s (.inl x) (.inl x')
+  | inr : s y y' → lift r s (.inr y) (.inr y')
+
+instance [ParaF ϕ] [ParaF φ] : ParaF.{u} λ α => ϕ α ⊕ φ α where
+  prop α β r := Sum.lift (ParaF.prop α β r) (ParaF.prop α β r)
+
+macro_rules | `(tactic| para_step) => `(tactic| intro (h : Sum.lift _ _ _ _); induction h)
+
+example : ParaT.prop (@f : ∀ {α β}, α → α ⊕ β) =
+  ∀ {α α'} (r : α → α' → Prop) {β β'} (s : β → β' → Prop),
+    ∀ x x', r x x' →
+      Sum.lift r s (f x) (f x')
+:= rfl
+
+example : ParaT.prop @Sum.inl := by parametric
+
+example : ParaT.prop λ {α β : Type _} (x : α) (yf : β ⊕ (α → β)) => (match yf with | .inl y => y | .inr f => f x : β) := by parametric
+
+example : ParaT.prop @List.zip := by parametric
+
+end Sum
