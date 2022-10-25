@@ -40,7 +40,7 @@ partial def reduceStar (e : Expr) : MetaM Expr :=
       | .proj n i s .. => return mkProj n i (← visit s)
       | _                  => return e
   withTheReader Core.Context (fun ctx => { ctx with options := ctx.options.setBool `smartUnfolding false }) <|
-    withTransparency (mode := .all) <|
+    withTransparency .all <|
       visit e |>.run
 
 open Elab
@@ -72,8 +72,10 @@ elab "apply_assumption" : tactic => do
   mvarId.withContext do
     let mvarIds? ← (← getLCtx).findDeclRevM? fun decl => do
       if decl.isAuxDecl then return none
-      try mvarId.apply decl.toExpr
-      catch _ => return none
+      try
+        commitIfNoEx (mvarId.apply decl.toExpr)
+      catch _ =>
+        return none
     match mvarIds? with
     | some mvarIds => Tactic.replaceMainGoal mvarIds
     | none => throwTacticEx `apply_assumption mvarId ""
