@@ -30,11 +30,6 @@ namespace FinTuple
 def foldr' {α : Fin n → Sort u} (f : ∀ {i}, Nat → α i → β → β) (y : β) (xs : ∀ i, α i) : β :=
   foldr (λ x (y, k) => (f k x y, k + 1)) (y, 0) xs |>.1
 
-def foldl {α : Fin n → Sort u} (f : ∀ {i}, β → α i → β) (y : β) (xs : ∀ i, α i) : β :=
-  match n with
-  | 0 => y
-  | _ + 1 => foldl f (f y (xs .zero)) (xs ·.succ)
-
 def dfoldr {α : Fin n → Sort u} {β : Fin (n + 1) → Sort v} (f : ∀ {i}, α i → β i.succ → β i.castSucc) (y : β .last) (xs : ∀ i, α i) : β .zero :=
   match n with
   | 0 => y
@@ -88,6 +83,11 @@ def foldr {α : Fin n → Sort u} {β : Sort v} (f : ∀ {i}, α i → β → β
   match n with
   | 0 => y
   | _ + 1 => f (xs .zero) (foldr f y (xs ·.succ))
+
+def foldl {α : Fin n → Sort u} {β : Sort v} (f : ∀ {i}, β → α i → β) (y : β) (xs : ∀ i, α i) : β :=
+  match n with
+  | 0 => y
+  | _ + 1 => foldl f (f y (xs .zero)) (xs ·.succ)
 
 def toList : (Fin n → α) → List α :=
   foldr .cons .nil
@@ -365,6 +365,24 @@ inductive Abt₃ : S → Type
   | var (x : Var s) : Abt₃ s
   | op (o : @O n si s) (ai : ∀ i, Abt₃ (si i).2) : Abt₃ s
 
+def Abt₁.subst [DecidableEq S] {s : S} (a : Abt₁ O s) (x : Var s) : Abt₁ O t → Abt₁ O t :=
+  ndrec
+    (λ t n => bvar t n)
+    (λ {t} y => if h : t = s then if h ▸ y = x then h ▸ a else var y else var y)
+    (λ o _ ai' => op o ai')
+
+variable [DecidableEq S] {s : S} (a : Abt₂ O s) (x : Var s) in
+def Abt₂.subst : Abt₂ O t → Abt₂ O t
+  | bvar t n => bvar t n
+  | var y => if h : t = s then if h ▸ y = x then h ▸ a else var y else var y
+  | op o ai => op o λ i => subst (ai i)
+
+variable [DecidableEq S] {s : S} (a : Abt₃ O s) (x : Var s) in
+def Abt₃.subst : Abt₃ O t → Abt₃ O t
+  | bvar t n => bvar t n
+  | var y => if h : t = s then if h ▸ y = x then h ▸ a else var y else var y
+  | op o ai => op o λ i => subst (ai i)
+
 variable [DecidableEq S] (s : S) in
 def bindCount : List S → Nat
   | [] => 0
@@ -431,12 +449,42 @@ instance : ToString (O₃ si s) where
   | .foo => "foo"
   | .bar => "bar"
 
+variable {S : Type} {O : ∀ ⦃n⦄, (Fin n → List S × S) → S → Type} in
+instance [DecidableEq S] [∀ {n} si s, ToString (@O n si s)] : ToString (Abt₂ O s) where
+  toString a := h (λ _ => 0) a
+where
+  h {s} (d : S → Nat) : Abt₂ O s → String
+  | .var x => x.toString ++ "'"
+  | .bvar s (x : Nat) => Var.toString (s := s) ⟨d s - 1 - x⟩
+  | .op (si := si) o ai => toString o ++ h' λ i => h'' d (si i).1 ++ h (λ s' => d s' + bindCount s' (si i).1) (ai i)
+  h' : ∀ {n}, (Fin n → String) → String
+  | 0, _ => ""
+  | _ + 1, ai => "(" ++ String.join (List.intersperse "; " (FinTuple.toList ai)) ++ ")"
+  h'' (d : S → Nat) : List S → String
+  | [] => ""
+  | si => String.join (List.intersperse ", " (si.foldl (λ (bs, d) b => (Var.toString (s := b) ⟨d b⟩ :: bs, λ s => d s + if b = s then 1 else 0)) ([], d)).1.reverse) ++ ". "
+
+variable {S : Type} {O : ∀ ⦃n⦄, (Fin n → ((m : Nat) × (Fin m → S)) × S) → S → Type} in
+instance [DecidableEq S] [∀ {n} si s, ToString (@O n si s)] : ToString (Abt₃ O s) where
+  toString a := h (λ _ => 0) a
+where
+  h {s} (d : S → Nat) : Abt₃ O s → String
+  | .var x => x.toString ++ "'"
+  | .bvar s (x : Nat) => Var.toString (s := s) ⟨d s - 1 - x⟩
+  | .op (si := si) o ai => toString o ++ h' λ i => h'' d (si i).1 ++ h (λ s' => d s' + bindCount' s' (si i).1) (ai i)
+  h' : ∀ {n}, (Fin n → String) → String
+  | 0, _ => ""
+  | _ + 1, ai => "(" ++ String.join (List.intersperse "; " (FinTuple.toList ai)) ++ ")"
+  h'' (d : S → Nat) : (m : Nat) × (Fin m → S) → String
+  | ⟨0, _⟩ => ""
+  | ⟨_ + 1, si⟩ => String.join (List.intersperse ", " (FinTuple.foldl (λ (bs, d) b => (Var.toString (s := b) ⟨d b⟩ :: bs, λ s => d s + if b = s then 1 else 0)) ([], d) si).1.reverse) ++ ". "
+
 open DList in
 #reduce (.op' .bar ⟦(⟦23, 24⟧, .op .foo ⟦.var 23, .var 24⟧)⟧ : Abt₁ O₁ ())
 open FinTuple DList in
-#check (.op' .bar ⟦(⟦23, 24⟧, .op .foo ⟦.var 23, .var 24⟧)⟧ : Abt₂ O₂ ())
+#eval (.op' .bar ⟦(⟦"x", "y"⟧, .op .foo ⟦.var "x", .var "y"⟧)⟧ : Abt₂ O₂ ())
 open FinTuple in
-#check (.op' .bar ⟦(⟦23, 24⟧, .op .foo ⟦.var 23, .var 24⟧)⟧ : Abt₃ O₃ ())
+#eval (.op' .bar ⟦(⟦"x", "y"⟧, .op .foo ⟦.var "x", .var "y"⟧)⟧ : Abt₃ O₃ ())
 
 /-
 def Abt.free [DecidableEq S] (s' : S) (a : Abt S O s) : Var' s' :=
@@ -476,27 +524,6 @@ def Abt.unop [DecidableEq S] (o : O si s) (ai : ∀ i, Abt S O (si i).2) i : (�
     ((liftAmt · (si i).1), λ k => nomatch k, ai i)
     (si i).1.2
     |>.2
-
-variable [DecidableEq S] [∀ {n} si s, DecidableEq (@O n si s)] (b : Abt S O s) (x : Var' s) in
-def Abt.subst : Abt S O s' → Abt S O s'
-  | var s' y => var s' y
-  | fvar (s := s') y => if h : s' = s then if x.x = y.x then h ▸ b else fvar y else fvar y
-  | op o ai => op o λ i => subst (ai i)
-
-variable {S : Type} {O : ∀ ⦃n⦄, (Fin n → ((m : Nat) × (Fin m → S)) × S) → S → Type} in
-instance [DecidableEq S] [∀ {n} si s, ToString (@O n si s)] : ToString (Abt S O s) where
-  toString a := h (λ _ => 0) a
-where
-  h {s} (d : S → Nat) : Abt S O s → String
-  | .fvar x => x.toString ++ "'"
-  | .var s (x : Nat) => Var.toString (d s - 1 - x)
-  | .op (si := si) o ai => toString o ++ h' λ i => h'' d (si i).1 ++ h (λ s' => d s' + Abt.liftAmt s' (si i).1) (ai i)
-  h' : ∀ {n}, (Fin n → String) → String
-  | 0, _ => ""
-  | _ + 1, ai => "(" ++ String.join (List.intersperse "; " (FinTuple.toList ai)) ++ ")"
-  h'' (d : S → Nat) : (m : Nat) × (Fin m → S) → String
-  | ⟨0, _⟩ => ""
-  | ⟨_ + 1, si⟩ => String.join (List.intersperse ", " (FinTuple.foldl (λ (bs, d) b => (Var.toString (d b) :: bs, λ s => d s + if b = s then 1 else 0)) ([], d) si).1.reverse) ++ ". "
 
 instance (priority := low) [ToString α] : Repr α where
   reprPrec x _ := toString x
