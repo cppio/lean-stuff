@@ -171,3 +171,139 @@ example : ParaT.prop λ {α β : Type _} (x : α) (yf : β ⊕ (α → β)) => (
 example : ParaT.prop @List.zip := by parametric
 
 end Sum
+
+open Lean Meta Elab Command
+
+def List.alternate : List α → List α → List α
+  | [], ys => ys
+  | x :: xs, ys => x :: alternate ys xs
+termination_by _ xs ys => xs.length + ys.length
+
+def mkArr (t₁ t₂ : Expr) : Expr :=
+  .forallE .anonymous t₁ t₂ .default
+
+def getForallBinders : Expr → List (Name × Expr)
+  | .forallE n t b _ => (n, t) :: getForallBinders b
+  | _ => []
+
+def mkForallBinders (b : Expr) (bi : BinderInfo) : List (Name × Expr) → Expr
+  | [] => b
+  | (n, t) :: bs => .forallE n t (mkForallBinders b bi bs) bi
+
+def liftBindersAlternate (start dec : Nat) : List (Name × Expr) → List (Name × Expr)
+  | [] => []
+  | (n, t) :: bs => (n, t.liftLooseBVars 0 start) :: liftBindersAlternate (start - dec) dec bs
+
+def mkParaInstance (val : InductiveVal) : CommandElabM Unit := do
+  if val.numIndices > 0 then
+    throwError "unsupported"
+    -- currenlty assumes Type u₁ → Type u₂ → ... → Type (max u₁ u₂ ...)
+
+  /-
+  let name := .str val.name "LiftRel"
+
+  let mkName (s : String) (n : Nat) : Name := .str .anonymous (s ++ "_" ++ toString n)
+
+  let us := val.levelParams.enum.map (mkName "u" ·.1.succ)
+  let vs := val.levelParams.enum.map (mkName "v" ·.1.succ)
+
+  let levelParams := us.alternate vs
+
+  let mut α : Expr := .const val.name (us.map .param)
+  let mut β : Expr := .const val.name (vs.map .param)
+
+  for i in [:val.numParams] do
+    let i := val.numParams - i
+    α := .app α <| .bvar <| i * 3 - 1
+    β := .app β <| .bvar <| i * 3 - 1
+
+  let mkType (type : Expr) (bi : BinderInfo) : Expr := Id.run do
+    let mut type := type
+    for i in [:val.numParams] do
+      let i := val.numParams - i
+      type := .forallE `r (mkArr (.bvar 1) <| mkArr (.bvar 1) <| .sort .zero) type bi
+      type := .forallE `β (.sort (.succ (.param (mkName "v" i)))) type .implicit
+      type := .forallE `α (.sort (.succ (.param (mkName "u" i)))) type .implicit
+    return type
+
+  let type := mkType (mkArr α <| mkArr β <| .sort .zero) .default
+  
+  let ctors ← val.ctors.mapM fun ctor => do
+    let ctor ← getConstInfo ctor
+    Lean.logInfo m!"{ctor.name}.{ctor.levelParams} : {ctor.type}"
+    let type := ctor.type.getForallBodyMaxDepth val.numParams
+    let ts := getForallBinders type
+    let mut params := #[]
+    for i in [:val.numParams * 3] do
+      params := params.push <| .bvar <| i + ts.length * 2
+    params := params.reverse
+    let mut params' := #[]
+    for i in [:ts.length] do
+      params' := params'.push <| .bvar <| i * 2 + 1
+    for i in [:val.numParams] do
+      params' := params'.push <| .bvar <| i * 3 + ts.length * 2 + 2
+    params := params.push (mkAppN (.const ctor.name (us.map .param)) params'.reverse)
+    params' := #[]
+    for i in [:ts.length] do
+      params' := params'.push <| .bvar <| i * 2
+    for i in [:val.numParams] do
+      params' := params'.push <| .bvar <| i * 3 + ts.length * 2 + 1
+    params := params.push (mkAppN (.const ctor.name (vs.map .param)) params'.reverse)
+    Lean.logInfo m!"{ts}"
+    let ts := (liftBindersAlternate (val.numParams * 2) 1 ts).alternate (liftBindersAlternate (val.numParams * 2) 1 ts)
+    let type := mkType (mkForallBinders (mkAppN (.const name (levelParams.map .param)) params) .implicit ts) .implicit
+    let ctor := {
+      name := ctor.name.replacePrefix val.name name
+      type
+    }
+    Lean.logInfo m!"{ctor.name} : {ctor.type}"
+    return ctor
+  -/
+
+  liftCoreM <| addAndCompile <| .defnDecl {
+    name := .str val.name "Lift"
+    levelParams := []
+    type := .const ``Nat []
+    value := .const ``Nat.zero []
+    hints := .abbrev
+    safety := .safe
+  }
+
+  /-
+  liftCoreM <| addAndCompile <| .inductDecl levelParams (val.numParams * 3) [{
+    name
+    type
+    ctors
+  }] false
+  -/
+
+elab "#derive_para" names:ident* : command => do
+    for name in names do
+      withRef name do
+        mkParaInstance (← getConstInfoInduct name.getId)
+
+set_option pp.all true in
+#derive_para List Prod Sum
+
+instance : ToMessageData ConstantVal where
+  toMessageData val := val.name ++ (if val.levelParams.isEmpty then m!" : " else ".{"  ++ .joinSep (val.levelParams.map .ofName) ", " ++ "} : ") ++ val.type
+
+elab "#print inductive " name:ident : command => do
+  let info ← getConstInfoInduct name.getId
+  let mut m := m!"{info.toConstantVal}{Format.line}  {info.numParams} params {info.numIndices} indices"
+  for ctor in info.ctors do
+    let ctorInfo ← getConstInfoCtor ctor
+    m := m!"{m}{Format.line}{ctorInfo.toConstantVal}{Format.line}  {ctorInfo.numFields} fields"
+  Lean.logInfo m
+
+#print List.Lift
+#eval List.Lift
+
+#print Prod.mk
+#print Prod.liftRel.mk
+
+#print Sum.inl
+#print Sum.liftRel.inl
+
+#print Prod.liftRel
+#print Prod.LiftRel

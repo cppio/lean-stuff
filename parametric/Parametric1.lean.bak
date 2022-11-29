@@ -1,0 +1,93 @@
+/-
+open Lean Lean.Meta in
+elab "Para⟪" ty:term "⟫" : term => do
+  let ty ← Elab.Term.elabTerm ty none
+  let u := ← mkFreshLevelMVar
+  let (ty, b) ← forallTelescopeReducing ty fun xs A => do
+    let lctx ← getLCtx
+    let mut b := 0
+    for i in [0:xs.size] do
+      let x := lctx.getFVar! xs[i]!
+      if !(← isDefEq x.type (.sort (.succ u))) then break
+      b := b + 1
+    let ty ← mkForallFVars xs A
+    return (ty, b)
+  let e ← forallBoundedTelescope ty (some b) fun xs A => do
+    withLocalDeclD `α (.forallE .anonymous (.app (.const ``Fin2 []) (.lit (.natVal xs.size))) (.sort (.succ u)) .default) fun α => do
+      let (e, _) := xs.foldl (β := _ × (Nat → Expr)) (fun (e, i) x =>
+        (e.replaceFVar x (.app α (i (xs.size - 1))),
+         λ n => .app (.app (.const ``Fin2.succ []) (.lit (.natVal n))) (i (n - 1)))
+      ) (A, λ n => .app (.const ``Fin2.zero []) (.lit (.natVal n)))
+      mkLambdaFVars #[α] e
+  let e ← synthInstance (.app (.app (.const ``ParaF [u]) (.lit (.natVal b))) e)
+  let e := .proj ``ParaF 0 e
+  let binders := ty.getForallBinderNames.toArray.shrink b
+  withLocalDecls (#[(`f, .default, fun _ => return ty)].append <| binders.concatMap fun n => #[
+    (n, .implicit, fun _ => return .sort (.succ u)),
+    (n.appendAfter "'", .implicit, fun _ => return .sort (.succ u)),
+    (n.appendBefore "r", .default, fun xs => return .forallE .anonymous (xs[xs.size - 2]!) (.forallE .anonymous (xs[xs.size - 1]!) (.sort .zero) .default) .default)
+  ]) fun xs => do
+    let mut fα := xs[0]!
+    let mut fβ := fα
+    let cases' (i) := .app (.app (.const ``Fin2.cases' [.succ (.succ u)]) (.lit (.natVal i))) (.sort (.succ u))
+    let mut α := .app (.const ``Fin2.elim' [.succ (.succ u)]) (.sort (.succ u))
+    let mut β := α
+    let rTy (n α β) := withLocalDeclD `i (.app (.const ``Fin2 []) (.lit (.natVal n))) fun i =>
+      mkLambdaFVars #[i] (.forallE .anonymous (.app α i) (.forallE .anonymous (.app β i) (.sort .zero) .default) .default)
+    let mut r := .app (.const ``Fin2.elim [.succ u]) (← rTy 0 α β)
+    for i in [:b] do
+      fα := .app fα xs[i * 3 + 1]!
+      fβ := .app fβ xs[i * 3 + 2]!
+      α := .app (.app (cases' i) xs[(b - i) * 3 - 2]!) α
+      β := .app (.app (cases' i) xs[(b - i) * 3 - 1]!) β
+      r := .app (.app (.app (.app (.const ``Fin2.cases [.succ u]) (.lit (.natVal i))) (← rTy (i + 1) α β)) xs[(b - i) * 3]!) r
+    let e := .app (.app (.app (.app (.app e α) β) r) fα) fβ
+    let e ← mkForallFVars xs[1:] e
+    let e ← mkLambdaFVars xs[:1] e
+    reduceStar e
+-/
+
+/-
+attribute [class] Eq
+attribute [instance] Eq.refl
+
+class Ty (α : Type (u + 1)) where
+  depth : Nat
+  ty : (Fin2 depth.succ → Type u) → Type u
+  toTy : α → ∀ β, ty β
+
+  toProp : ((α β : Fin2 depth.succ → Type u) → (r : ∀ i, α i → β i → Prop) → Prop) → Prop
+
+instance {ϕ : Type u → Type u} : Ty (∀ α, ϕ α) where
+  depth := 0
+  ty α := ϕ (α 0)
+  toTy f α := f (α 0)
+
+  toProp f := ∀ {α β} (r : α → β → Prop), f (λ _ => α) (λ _ => β) (λ _ => r)
+
+instance {ϕ : Type u → Type (u + 1)} [∀ α, Ty (ϕ α)] [I : ∀ α, Ty.depth (ϕ PEmpty) = Ty.depth (ϕ α)] : Ty (∀ α, ϕ α) where
+  depth := (Ty.depth (ϕ PEmpty)).succ
+  ty α := Ty.ty (I (α .zero) ▸ α ∘ .succ)
+  toTy f α := Ty.toTy (f (α .zero)) (I (α .zero) ▸ α ∘ .succ)
+
+  toProp f := ∀ {α β} (r : α → β → Prop), Ty.toProp λ α' β' g => f (Fin2.cases α α') (Fin2.cases β β') (Fin2.cases r g)
+
+instance [I : Ty α] [ParaF I.ty] : ParaT α where
+  prop f := Ty.toProp λ α β r => ParaF.prop r (Ty.toTy f α) (Ty.toTy f β)
+-/
+
+/-
+#reduce* @Ty.ty (∀  α    : Type, α → α) _
+#reduce* @Ty.ty (∀  α _β : Type, α → α) _
+#reduce* @Ty.ty (∀  α  β : Type, α → β) _
+#reduce* @Ty.ty (∀  α  β : Type, β → α) _
+#reduce* @Ty.ty (∀ _α  β : Type, β → β) _
+
+theorem subst_app {α : Sort u} {β : α → Sort v} {β' : α → Sort w} {x x' : α} (f : β x → β' x) (y : β x) (h : x = x') : (h ▸ f) (h ▸ y) = h ▸ f y := by
+  cases h
+  rfl
+
+theorem subst_app' {α : Sort u} {β : α → Sort v} {β' : Sort w} {x x' : α} (f : β x → β') (y : β x) (h : x = x') : (h ▸ f) (h ▸ y) = f y := by
+  cases h
+  rfl
+-/

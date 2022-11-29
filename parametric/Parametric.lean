@@ -93,6 +93,15 @@ elab "destruct" e:term : tactic => do
         return
     throwTacticEx `destruct mvarId ""
 
+/-
+syntax "#derive_para" ident* : command
+
+initialize registerDerivingHandler `Para fun names => do
+  let names := .mk <| names.map (.ident .none default · [])
+  Command.elabCommand (← `(#derive_para $names*))
+  return true
+-/
+
 end
 
 structure Equiv (α : Sort u) (β : Sort v) where
