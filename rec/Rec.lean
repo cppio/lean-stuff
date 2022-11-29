@@ -1,6 +1,7 @@
 import Rec.Util
 import Lean
 
+/-
 inductive Ordinal
   | zero : Ordinal
   | succ : Ordinal → Ordinal
@@ -37,6 +38,7 @@ deriving instance Repr for Lean.InductiveVal
 deriving instance Repr for Lean.ConstructorVal
 deriving instance Repr for Lean.RecursorRule
 deriving instance Repr for Lean.RecursorVal
+-/
 
 namespace Lean.Expr
 
@@ -127,11 +129,13 @@ elab "#compile " i:ident : command => liftTermElabM <| withRef i do
   _ ← getConstInfoInduct i
   compileRec <| ← getConstInfoRec <| mkRecName i
 
+/-
 #compile Nat
 #compile List
 #compile Fin2
 --#compile Vec
 --#compile Ordinal
+-/
 
 open Lean in
 partial def getMutualRecs (name : Name) : CoreM (NameMap RecursorVal) :=
@@ -259,6 +263,7 @@ elab "#compile mutual " i:ident : command => liftTermElabM <| withRef i do
   _ ← getConstInfoInduct i
   compileMutualRecs <| mkRecName i
 
+/-
 inductive Foo (α β : Type)
 inductive Bar : Nat → Type
   | mk : Foo (Bar 0) PUnit → Bar 0
@@ -273,5 +278,8 @@ inductive Test (α : Type) : Nat → Nat → Type
 inductive Simple
   | mk : (Unit → Unit → Simple) → Simple
 
+/-
 inductive Wtf
   | mk : (Unit → Nat → Wtf) → Wtf
+  -/
+  -/

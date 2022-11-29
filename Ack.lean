@@ -1,13 +1,6 @@
-private def Nat.rec' {motive : Nat → Sort u} (zero : motive zero) (succ : ∀ n, motive n → motive (succ n)) : ∀ n, motive n
-  | .zero => zero
-  | .succ n => succ n (rec' zero succ n)
+import Rec
 
-@[csimp]
-private theorem Nat.rec_eq_rec' : @rec = @rec' := by
-  funext motive zero succ n
-  induction n with
-  | zero => rfl
-  | succ n ih => exact congrArg (succ n) ih
+#compile Nat
 
 def ack : Nat → Nat → Nat
   | 0, n => n + 1

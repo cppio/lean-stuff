@@ -1,3 +1,5 @@
+import Rec
+
 def Fin.zero : Fin (.succ n) :=
   ⟨0, n.zero_lt_succ⟩
 
@@ -126,28 +128,8 @@ def foldr : DList β as → γ
   | nil => y
   | cons x xs => f x (foldr xs)
 
-def toList : DList (λ _ => α) as → List α
-  | nil => []
-  | cons x xs => x :: toList xs
-
-universe w in
-variable
-  {α : Type u}
-  {β : α → Sort v}
-  {motive : ∀ as, DList β as → Sort w}
-  (nil : motive [] nil)
-  (cons : ∀ {a as} x xs, motive as xs → motive (a :: as) (cons x xs))
-in
-private def rec' : ∀ t, motive as t
-  | .nil => nil
-  | .cons x xs => cons x xs (rec' xs)
-
-@[csimp]
-private theorem rec_eq_rec' : @rec = @rec' := by
-  funext α β motive nil cons as t
-  induction t with
-  | nil => rfl
-  | cons x xs ih => exact congrArg _ ih
+def toList : DList (λ _ => α) as → List α :=
+  foldr .cons .nil
 
 end DList
 
@@ -201,12 +183,13 @@ inductive Exp
   | times : Exp → Exp → Exp
 
 instance : ToString Exp where
-  toString := f
-where f
+  toString := toString
+where
+  toString
   | .var x => x.toString
   | .num n => s!"num[{n}]"
-  | .plus e₁ e₂ => s!"plus({f e₁}; {f e₂})"
-  | .times e₁ e₂ => s!"times({f e₁}; {f e₂})"
+  | .plus e₁ e₂ => s!"plus({toString e₁}; {toString e₂})"
+  | .times e₁ e₂ => s!"times({toString e₁}; {toString e₂})"
 
 namespace Exp
 
@@ -218,7 +201,7 @@ def substExp : Exp → Exp
   | times e₁ e₂ => times (substExp e₁) (substExp e₂)
 
 #eval plus (num 2) (times (num 3) (var 0))
-#eval substExp (num 2) 0 (plus (var 0) (num 3))
+#eval substExp (num 2) 0 (plus (var 0) (var 1))
 
 end Exp
 
@@ -229,65 +212,21 @@ inductive Ast : S → Type
   | var (x : Var s) : Ast s
   | op (o : O si s) (ai : DList Ast si) : Ast s
 
+#compile mutual Ast
+
 namespace Ast
-
-section rec
-
-variable
-  {motive₁ : (s : S) → Ast O s → Sort u}
-  {motive₂ : ∀ si, DList (Ast O) si → Sort u}
-  (var : ∀ {s} x, motive₁ s (var x))
-  (op : ∀ {si s} o ai, motive₂ si ai → motive₁ s (op o ai))
-  (nil : motive₂ .nil .nil)
-  (cons : ∀ {s si} a ai, motive₁ s a → motive₂ si ai → motive₂ (.cons s si) (.cons a ai))
-
-mutual
-
-private def rec' : ∀ a, motive₁ s a
-  | .var x => var x
-  | .op o ai => op o ai (rec_1' ai)
-
-private def rec_1' : ∀ ai, motive₂ si ai
-  | .nil => nil
-  | .cons a ai => cons a ai (rec' a) (rec_1' ai)
-
-end
-
-mutual
-
-private theorem rec_eq_rec'_ : ∀ a, @rec S O motive₁ motive₂ @var @op @nil @cons s a = @rec' S O motive₁ motive₂ @var @op @nil @cons s a
-  | .var x => by unfold rec'; rfl
-  | .op o ai => by unfold rec'; exact congrArg (op o ai) (rec_1_eq_rec_1'_ ai)
-
-private theorem rec_1_eq_rec_1'_ : ∀ ai, @rec_1 S O motive₁ motive₂ @var @op @nil @cons si ai = @rec_1' S O motive₁ motive₂ @var @op @nil @cons si ai
-  | .nil => by unfold rec_1'; rfl
-  | .cons a ai => by unfold rec_1'; exact congr (congrArg (cons a ai) (rec_eq_rec'_ a)) (rec_1_eq_rec_1'_ ai)
-
-end
-
-end rec
-
-@[csimp]
-private theorem rec_eq_rec' : @rec = @rec' := by
-  funext S O motive₁ motive₂ var op nil cons s a
-  apply rec_eq_rec'_
-
-@[csimp]
-private theorem rec_1_eq_rec_1' : @rec_1 = @rec_1' := by
-  funext S O motive₁ motive₂ var op nil cons si ai
-  apply rec_1_eq_rec_1'_
 
 def ndrec
   {motive : S → Type u}
   (var : ∀ {s}, Var s → motive s)
   (op : ∀ {si s}, O si s → DList (Ast O) si → DList motive si → motive s)
-: ∀ {a}, Ast O a → motive a :=
+: ∀ {s}, Ast O s → motive s :=
   @rec S O (λ s _ => motive s) (λ si _ => DList motive si) var op DList.nil λ _ _ => DList.cons
 
 def subst [DecidableEq S] {s : S} (a : Ast O s) (x : Var s) : Ast O t → Ast O t :=
   ndrec
     (λ {t} y => if h : t = s then if h ▸ y = x then h ▸ a else var y else var y)
-    (λ o _ai ai' => op o ai')
+    (λ o _ ai' => op o ai')
 
 protected def toString [∀ si s, ToString (O si s)] : Ast O s → String :=
   ndrec
@@ -295,14 +234,14 @@ protected def toString [∀ si s, ToString (O si s)] : Ast O s → String :=
     (λ | o, .nil, _ => toString o
        | o, _, ai' => toString o ++ "(" ++ .joinSep ai'.toList "; " ++ ")")
 
-instance [∀ si s, ToString (O si s)] : ToString (Ast O s) := ⟨Ast.toString⟩
-
 end Ast
+
+instance [∀ si s, ToString (O si s)] : ToString (Ast O s) := ⟨Ast.toString⟩
 
 variable {S : Type} (O : ∀ ⦃n⦄, (Fin n → S) → S → Type) in
 inductive Ast' : S → Type
   | var (x : Var s) : Ast' s
-  | op {si : Fin n → S} (o : O si s) (ai : ∀ i, Ast' (si i)) : Ast' s
+  | op (o : @O n si s) (ai : ∀ i, Ast' (si i)) : Ast' s
 
 namespace Ast'
 
@@ -316,9 +255,9 @@ protected def toString [∀ {n} si s, ToString (@O n si s)] : Ast' O s → Strin
   | op (n := 0) o _ => toString o
   | op o ai => toString o ++ "(" ++ .joinSep (FinTuple.toList λ i => (ai i).toString) "; " ++ ")"
 
-instance [∀ {n} si s, ToString (@O n si s)] : ToString (Ast' O s) := ⟨Ast'.toString⟩
-
 end Ast'
+
+instance [∀ {n} si s, ToString (@O n si s)] : ToString (Ast' O s) := ⟨Ast'.toString⟩
 
 namespace ExampleAst
 
@@ -335,9 +274,9 @@ inductive O : List S → S → Type
 
 instance : ToString (O si s) where
   toString
-    | .num n => s!"num[{n}]"
-    | .plus => "plus"
-    | .times => "times"
+  | .num n => s!"num[{n}]"
+  | .plus => "plus"
+  | .times => "times"
 
 abbrev Ast := _root_.Ast O
 
@@ -351,7 +290,7 @@ def plus (a b : Exp) : Exp := .op .plus ⟦a, b⟧
 def times (a b : Exp) : Exp := .op .times ⟦a, b⟧
 
 #eval plus (num 2) (times (num 3) (var 0))
-#eval Ast.subst (num 2) 0 (plus (var 0) (num 3))
+#eval Ast.subst (num 2) 0 (plus (var 0) (var 1))
 
 end Exp
 
@@ -372,9 +311,9 @@ inductive O : ∀ ⦃n⦄, (Fin n → S) → S → Type
 
 instance : ToString (O si s) where
   toString
-    | .num n => s!"num[{n}]"
-    | .plus => "plus"
-    | .times => "times"
+  | .num n => s!"num[{n}]"
+  | .plus => "plus"
+  | .times => "times"
 
 abbrev Ast := _root_.Ast' O
 
@@ -388,7 +327,7 @@ def plus (a b : Exp) : Exp := .op .plus ⟦a, b⟧
 def times (a b : Exp) : Exp := .op .times ⟦a, b⟧
 
 #eval plus (num 2) (times (num 3) (var 0))
-#eval Ast'.subst (num 2) 0 (plus (var 0) (num 3))
+#eval Ast'.subst (num 2) 0 (plus (var 0) (var 1))
 
 end Exp
 
@@ -400,63 +339,16 @@ inductive Abt₁ : S → Type
   | var (x : Var s) : Abt₁ s
   | op (o : O si s) (ai : DList (Abt₁ ·.2) si) : Abt₁ s
 
+#compile mutual Abt₁
+
 namespace Abt₁
-
-section rec
-
-variable
-  {motive₁ : (s : S) → Abt₁ O s → Sort u}
-  {motive₂ : (si : List (_ × S)) → DList (Abt₁ O ·.2) si → Sort u}
-  (bvar : ∀ s n, motive₁ s (bvar s n))
-  (var : ∀ {s} x, motive₁ s (var x))
-  (op : ∀ {si s} o ai, motive₂ si ai → motive₁ s (op o ai))
-  (nil : motive₂ .nil .nil)
-  (cons : ∀ {s si} a (ai : DList (Abt₁ O ·.2) si), motive₁ s.2 a → motive₂ si ai → motive₂ (.cons s si) (.cons a ai))
-
-mutual
-
-private def rec' : ∀ a, motive₁ s a
-  | .bvar s n => bvar s n
-  | .var x => var x
-  | .op o ai => op o ai (rec_1' ai)
-
-private def rec_1' : ∀ ai, motive₂ si ai
-  | .nil => nil
-  | .cons a ai => cons a ai (rec' a) (rec_1' ai)
-
-end
-
-mutual
-
-private theorem rec_eq_rec'_ : ∀ a, @rec S O motive₁ motive₂ @bvar @var @op @nil @cons s a = @rec' S O motive₁ motive₂ @bvar @var @op @nil @cons s a
-  | .bvar s n => by unfold rec'; rfl
-  | .var x => by unfold rec'; rfl
-  | .op o ai => by unfold rec'; exact congrArg (op o ai) (rec_1_eq_rec_1'_ ai)
-
-private theorem rec_1_eq_rec_1'_ : ∀ ai, @rec_1 S O motive₁ motive₂ @bvar @var @op @nil @cons si ai = @rec_1' S O motive₁ motive₂ @bvar @var @op @nil @cons si ai
-  | .nil => by unfold rec_1'; rfl
-  | .cons a ai => by unfold rec_1'; exact congr (congrArg (cons a ai) (rec_eq_rec'_ a)) (rec_1_eq_rec_1'_ ai)
-
-end
-
-end rec
-
-@[csimp]
-private theorem rec_eq_rec' : @rec = @rec' := by
-  funext S O motive₁ motive₂ bvar var op nil cons s a
-  apply rec_eq_rec'_
-
-@[csimp]
-private theorem rec_1_eq_rec_1' : @rec_1 = @rec_1' := by
-  funext S O motive₁ motive₂ bvar var op nil cons si ai
-  apply rec_1_eq_rec_1'_
 
 def ndrec
   {motive : S → Type u}
   (bvar : ∀ s, Nat → motive s)
   (var : ∀ {s}, Var s → motive s)
   (op : ∀ {si s}, O si s → DList (Abt₁ O ·.2) si → DList (motive ·.2) si → motive s)
-: ∀ {a}, Abt₁ O a → motive a :=
+: ∀ {s}, Abt₁ O s → motive s :=
   @rec S O (λ s _ => motive s) (λ si _ => DList (motive ·.2) si) bvar var op DList.nil λ _ _ => DList.cons (α := _ × S) (β := (motive ·.2))
 
 end Abt₁
@@ -465,13 +357,13 @@ variable {S : Type} (O : ∀ ⦃n⦄, (Fin n → List S × S) → S → Type) in
 inductive Abt₂ : S → Type
   | bvar s (n : Nat) : Abt₂ s
   | var (x : Var s) : Abt₂ s
-  | op {si : Fin n → _} (o : O si s) (ai : ∀ i, Abt₂ (si i).2) : Abt₂ s
+  | op (o : @O n si s) (ai : ∀ i, Abt₂ (si i).2) : Abt₂ s
 
 variable {S : Type} (O : ∀ ⦃n⦄, (Fin n → ((m : Nat) × (Fin m → S)) × S) → S → Type) in
 inductive Abt₃ : S → Type
   | bvar s (n : Nat) : Abt₃ s
   | var (x : Var s) : Abt₃ s
-  | op {si : Fin n → _} (o : O si s) (ai : ∀ i, Abt₃ (si i).2) : Abt₃ s
+  | op (o : @O n si s) (ai : ∀ i, Abt₃ (si i).2) : Abt₃ s
 
 variable [DecidableEq S] (s : S) in
 def bindCount : List S → Nat
@@ -483,12 +375,11 @@ def bindCount' : ((m : Nat) × (Fin m → S)) → Nat
   | ⟨0, _⟩ => 0
   | ⟨m + 1, ts⟩ => bindCount' ⟨m, ts ∘ .succ⟩ + if ts .zero = s then 1 else 0
 
-variable [DecidableEq S] {s : S} (x : Var s) in
-def Abt₁.bind : @Abt₁ S O t → Nat → Abt₁ O t :=
+def Abt₁.bind [DecidableEq S] {s : S} (x : Var s) : @Abt₁ S O t → Nat → Abt₁ O t :=
   ndrec (motive := λ t => Nat → Abt₁ O t)
-    (λ t m _n => bvar t m)
+    (λ t m _ => bvar t m)
     (λ {t} y n => if h : t = s then if h ▸ y = x then bvar t n else var y else var y)
-    (λ o _ai ai' n => op o (ai'.map λ {b} f => f (n + bindCount s b.1)))
+    (λ o _ ai' n => op o (ai'.map λ {b} f => f (n + bindCount s b.1)))
 
 variable [DecidableEq S] {s : S} (x : Var s) in
 def Abt₂.bind (n : Nat) : @Abt₂ S O t → Abt₂ O t
@@ -509,7 +400,7 @@ def Abt₂.op' [DecidableEq S] {s : S} (o : O si s) (ai : ∀ i, DList Var (si i
   .op o λ i => (ai i).1.foldr (λ {t} x (a, n) => (bind x (n t) a, λ u => if u = t then n u + 1 else n u)) ((ai i).2, λ _ : S => 0) |>.1
 
 def Abt₃.op' [DecidableEq S] {s : S} (o : O si s) (ai : ∀ i, (∀ j, Var ((si i).1.2 j)) × Abt₃ O (si i).2) : Abt₃ O s :=
-  .op o λ i => FinTuple.foldr (λ {j} x (a, n) => (bind x (n ((si i).1.2 j)) a, λ u => if u = (si i).1.2 j then n u + 1 else n u)) ((ai i).2, λ _ : S => 0) (ai i).1 |>.1
+  .op o λ i => FinTuple.foldr (λ {j} x (a, n) => let t := (si i).1.2 j; (bind x (n t) a, λ u => if u = t then n u + 1 else n u)) ((ai i).2, λ _ : S => 0) (ai i).1 |>.1
 
 inductive O₁ : List (List Unit × Unit) → Unit → Type
   | foo : O₁ [([], ()), ([], ())] ()
@@ -517,8 +408,8 @@ inductive O₁ : List (List Unit × Unit) → Unit → Type
 
 instance : ToString (O₁ si s) where
   toString
-    | .foo => "foo"
-    | .bar => "bar"
+  | .foo => "foo"
+  | .bar => "bar"
 
 open FinTuple in
 inductive O₂ : ∀ ⦃n⦄, (Fin n → List Unit × Unit) → Unit → Type
@@ -527,8 +418,8 @@ inductive O₂ : ∀ ⦃n⦄, (Fin n → List Unit × Unit) → Unit → Type
 
 instance : ToString (O₂ si s) where
   toString
-    | .foo => "foo"
-    | .bar => "bar"
+  | .foo => "foo"
+  | .bar => "bar"
 
 open FinTuple in
 inductive O₃ : ∀ ⦃n⦄, (Fin n → ((m : Nat) × (Fin m → Unit)) × Unit) → Unit → Type
@@ -537,8 +428,8 @@ inductive O₃ : ∀ ⦃n⦄, (Fin n → ((m : Nat) × (Fin m → Unit)) × Unit
 
 instance : ToString (O₃ si s) where
   toString
-    | .foo => "foo"
-    | .bar => "bar"
+  | .foo => "foo"
+  | .bar => "bar"
 
 open DList in
 #reduce (.op' .bar ⟦(⟦23, 24⟧, .op .foo ⟦.var 23, .var 24⟧)⟧ : Abt₁ O₁ ())
@@ -548,9 +439,6 @@ open FinTuple in
 #check (.op' .bar ⟦(⟦23, 24⟧, .op .foo ⟦.var 23, .var 24⟧)⟧ : Abt₃ O₃ ())
 
 /-
-def Abt.op' [DecidableEq S] (o : O si s) (ai : ∀ i, (∀ j, Var' ((si i).1.2 j)) × Abt S O (si i).2) : Abt S O s :=
-  .op o λ i => FinTuple.foldr' (λ k x => bind _ x k) (ai i).2 (ai i).1
-
 def Abt.free [DecidableEq S] (s' : S) (a : Abt S O s) : Var' s' :=
   let n := fv a
   let v := h a (mkArray n true)
