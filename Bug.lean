@@ -1,49 +1,25 @@
-import Lean
+inductive Ordinal
+  | zero : Ordinal
+  | succ : Ordinal → Ordinal
+  | limit : (Nat → Ordinal) → Ordinal
 
-/-
-syntax "level% " level : term
-macro_rules
-  | `(level% ($l)) => `(level% $l)
-  | `(level% $i:ident) => `(Lean.Level.param $(Lean.quote i.getId))
-  | `(level% $n:num) => `(Lean.Level.ofNat $n)
-  | `(level% $l + $n) => `(Lean.Level.addOffset (level% $l) $n)
-  | `(level% imax $l $l') => `(Lean.Level.imax (level% $l) (level% $l'))
--/
+variable
+  {motive : Ordinal → Sort u}
+  (zero : motive .zero)
+  (succ : (o : Ordinal) → motive o → motive (.succ o))
+  (limit : (f : Nat → Ordinal) → ((n : Nat) → motive (f n)) → motive (.limit f))
+in
+def Ordinal.rec' : (o : Ordinal) → motive o
+  | .zero => zero
+  | .succ o => succ o (rec' o)
+  | .limit f => limit f λ n => rec' (f n)
 
-partial def elabLevel : Lean.TSyntax `level → Lean.CoreM Lean.Level
-  | `(level| ($l)) => elabLevel l
-  | `(level| $i:ident) => return .param i.getId
-  | `(level| $n:num) => return .ofNat n.getNat
-  | `(level| $l + $n) => return .addOffset (← elabLevel l) n.getNat
-  | `(level| imax $l $l') => return .imax (←elabLevel l) (← elabLevel l')
-  | _ => Lean.Elab.throwUnsupportedSyntax
+@[csimp]
+def Ordinal.rec_eq_rec' : @rec = @rec' := by
+  funext motive zero succ limit o
+  induction o with
+  | zero => rfl
+  | succ o ho => exact congrArg _ ho
+  | limit f hf => exact congrArg _ (funext hf)
 
-partial def elabExpr : Lean.TSyntax `term → Lean.CoreM Lean.Expr
-  | `(($t)) => elabExpr t
-  | `($i:ident) => return .const i.getId []
-  | `(@$i:ident) => return .const i.getId []
-  | `($i:ident.{$l,*}) => return .const i.getId (← l.getElems.toList.mapM elabLevel)
-  | `(@$i:ident.{$l,*}) => return .const i.getId (← l.getElems.toList.mapM elabLevel)
-  | `(Sort $l) => return .sort (← elabLevel l)
-  | `(Type $l) => return .sort (.succ (← elabLevel l))
-  | `($t $ts*) => return Lean.mkAppN (← elabExpr t) (← ts.mapM elabExpr)
-  | _ => Lean.Elab.throwUnsupportedSyntax
-
-syntax "rdef " ident (".{" ident,+ "}")? " : " term " := " term : command
-
-open Lean Elab Command in
-elab_rules : command | `(rdef $name $[.{ $levelParams?,* }]? : $type := $value) => do
-  let levelParams :=
-    if let some levelParams := levelParams?
-    then levelParams.getElems.toList.map (·.getId)
-    else []
-  liftCoreM <| addDecl <| .defnDecl {
-    name := name.getId
-    levelParams
-    type := ← liftCoreM <| elabExpr type
-    value := ← liftCoreM <| elabExpr value
-    hints := .abbrev
-    safety := .safe
-  }
-
-rdef bug.{u} : @Eq.{imax 1 u + 2} (Type (imax 1 u)) (Sort (imax 1 u)) (Type (imax 1 u)) := @rfl.{imax 1 u + 2} (Type (imax 1 u)) (Sort (imax 1 u))
+#eval @Ordinal.rec (λ _ => Option Nat) (some .zero) (λ _ => Option.map .succ) (λ _ _ => none) (.succ <| .succ .zero)
