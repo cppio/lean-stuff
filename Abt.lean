@@ -1,5 +1,3 @@
-import Lean
-
 def Fin.zero : Fin (.succ n) :=
   ⟨0, n.zero_lt_succ⟩
 
@@ -10,14 +8,6 @@ def Fin.castSucc : Fin n → Fin n.succ
   | ⟨i, h⟩ => ⟨i, .step h⟩
 
 def String.joinSep l sep := join (List.intersperse sep l)
-
-open Lean in
-elab tk:"#print " "instances " t:term : command =>
-  Elab.Command.runTermElabM λ _ => do
-    let e ← Elab.Term.elabType t
-    let insts ← Meta.SynthInstance.getInstances e
-    let insts ← insts.mapM λ inst => return m!"{inst} : {← Meta.inferType inst}"
-    logInfoAt tk <| .joinSep insts.toList Format.line
 
 /-
 def Fin.cast (h' : k ≤ n) : Fin k → Fin n

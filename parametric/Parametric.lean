@@ -2,70 +2,7 @@ import Lean
 
 section
 
-open Lean Meta
-
-private def modifyLocalDecl [Monad M] (lctx : LocalContext) (e : Expr) (f : LocalDecl → M LocalDecl) : M LocalContext :=
-  match lctx with
-  | { fvarIdToDecl := map, decls := decls } =>
-    match lctx.findFVar? e with
-    | none      => return lctx
-    | some decl => do
-      let decl ← f decl
-      return { fvarIdToDecl := map.insert decl.fvarId decl
-               decls        := decls.set decl.index decl }
-
-partial def reduceStar (e : Expr) : MetaM Expr :=
-  let rec visit (e : Expr) : MonadCacheT Expr Expr MetaM Expr :=
-    checkCache e fun _ => withIncRecDepth do
-      let e ← whnf e
-      match e with
-      | .app .. =>
-        let f     ← visit e.getAppFn
-        let mut args  := e.getAppArgs
-        for i in [:args.size] do
-          args ← args.modifyM i visit
-        return mkAppN f args
-      | .lam ..        => lambdaTelescope e fun xs b => do
-        let mut lctx ← getLCtx
-        for x in xs do
-          lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
-        withLCtx lctx (← getLocalInstances) do
-          return (← mkLambdaFVars xs (← visit b)).eta
-      | .forallE ..    => forallTelescope e fun xs b => do
-        let mut lctx ← getLCtx
-        for x in xs do
-          lctx ← modifyLocalDecl lctx x λ e => return e.setType (← visit e.type)
-        withLCtx lctx (← getLocalInstances) do
-          mkForallFVars xs (← visit b)
-      | .proj n i s .. => return mkProj n i (← visit s)
-      | _                  => return e
-  withTheReader Core.Context (fun ctx => { ctx with options := ctx.options.setBool `smartUnfolding false }) <|
-    withTransparency .all <|
-      visit e |>.run
-
-open Elab
-
-elab tk:"#reduce*" term:term : command =>
-  withoutModifyingEnv <| Command.runTermElabM fun _ => Term.withDeclName `_reduceStar do
-    let e ← Term.elabTerm term none
-    Term.synthesizeSyntheticMVarsNoPostponing
-    let e ← Term.levelMVarToParam (← instantiateMVars e)
-    logInfoAt tk (← reduceStar e)
-
-private def nameCmp : List Name → List Name → Ordering
-  | [], [] => .eq
-  | [], _ => .lt
-  | _, [] => .gt
-  | n₁ :: s₁, n₂ :: s₂ =>
-    match n₁.cmp n₂ with
-    | .eq => nameCmp s₁ s₂
-    | ord => ord
-
-elab tk:"#print prefix" id:ident : command => do
-  let cs := (← getEnv).constants.fold (λ cs name info =>
-    if id.getId.isPrefixOf name then cs.push (name, info.type) else cs) #[]
-  let cs := cs.qsort λ x y => nameCmp x.1.components y.1.components == .lt
-  logInfoAt tk (.joinSep (cs.map λ (name, type) => name ++ " : " ++ type).toList Format.line)
+open Lean Meta Elab
 
 elab "apply_assumption" : tactic => do
   let mvarId ← Tactic.getMainGoal

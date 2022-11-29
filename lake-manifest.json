@@ -1,0 +1,8 @@
+{"version": 3,
+ "packages":
+ [{"git":
+   {"url": "https://github.com/leanprover/std4.git",
+    "subDir?": null,
+    "rev": "2462f990c4cc6e834c20a1bd60332a327fbcbcc7",
+    "name": "std",
+    "inputRev?": "main"}}]}

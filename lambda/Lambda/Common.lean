@@ -1,23 +1,3 @@
-import Lean
-
-private def nameCmp' : List Lean.Name → List Lean.Name → Ordering
-  | [], [] => .eq
-  | [], _ => .lt
-  | _, [] => .gt
-  | n₁ :: s₁, n₂ :: s₂ =>
-    match n₁.cmp n₂ with
-    | .eq => nameCmp' s₁ s₂
-    | ord => ord
-
-private def nameCmp (n₁ : Lean.Name) (n₂ : Lean.Name) : Ordering :=
-  nameCmp' n₁.components n₂.components
-
-elab tk:"#print prefix" id:ident : command => do
-  let cs := (← Lean.getEnv).constants.fold (λ cs name info =>
-    if id.getId.isPrefixOf name then cs.push (name, info.type) else cs) #[]
-  let cs := cs.qsort λ x y => nameCmp x.1 y.1 == .lt
-  Lean.logInfoAt tk (.joinSep (cs.map λ (name, type) => name ++ " : " ++ type).toList Lean.Format.line)
-
 theorem congrArg₂ (f : α → β → γ) : a₁ = a₂ → b₁ = b₂ → f a₁ b₁ = f a₂ b₂ :=
   congr ∘ congrArg f
 
