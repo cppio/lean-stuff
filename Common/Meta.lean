@@ -80,7 +80,18 @@ elab tk:"#reduce*" term:term : command =>
     let e ← Term.levelMVarToParam (← instantiateMVars e)
     logInfoAt tk (← reduceStar e)
 
+elab "reduce% " term:term : term <= type? => do
+  let e ← Term.elabTerm term type?
+  Term.synthesizeSyntheticMVarsNoPostponing
+  let e ← instantiateMVars e
+  reduceStar e
+
 elab tk:"#print instances " t:term : command => Command.runTermElabM fun _ => do
   let e ← Term.elabType t
   let insts ← SynthInstance.getInstances e
   logInfoAt tk <| ← joinMapM insts λ inst => return inst ++ " : " ++ (← inferType inst)
+
+elab tk:"#time " c:command : command => do
+  let start ← IO.monoMsNow
+  Command.elabCommand c
+  logInfoAt tk m!"time: {(← IO.monoMsNow) - start} ms"
