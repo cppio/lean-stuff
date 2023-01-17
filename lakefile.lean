@@ -6,5 +6,5 @@ package common
 @[default_target]
 lean_lib Common
 
-require std from git "https://github.com/leanprover/std4.git" @ "main"
+require mathlib from git "https://github.com/leanprover-community/mathlib4.git"
 require rec from "rec"

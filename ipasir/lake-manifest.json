@@ -1,0 +1,5 @@
+{"version": 4,
+ "packagesDir": "./lake-packages",
+ "packages":
+ [{"path": {"name": "bindgen", "dir": "./../bindgen"}},
+  {"path": {"name": "resource", "dir": "./../resource"}}]}
