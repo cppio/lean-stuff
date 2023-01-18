@@ -1,5 +1,5 @@
-@[extern c inline "lean_box(0)"]
-opaque eval {α : Sort u} : @& α → Unit
+@[extern c inline "#4"]
+def seq {α : Sort u} {β : Sort v} (_ : @& α) (x : β) : β := x
 
 structure Pointer where
   addr : USize

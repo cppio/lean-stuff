@@ -36,7 +36,7 @@ macro_rules
 syntax "cTypeAtom_of_ret% " cTypeAtom term : term
 
 macro_rules
-  | `(cTypeAtom_of_ret% void $x) => ``(eval $x)
+  | `(cTypeAtom_of_ret% void $x) => ``(seq $x ())
   | `(cTypeAtom_of_ret% char $x) => ``($x)
   | `(cTypeAtom_of_ret% int $x) => ``($x)
   | `(cTypeAtom_of_ret% int32_t $x) => ``($x)
