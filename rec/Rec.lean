@@ -1,7 +1,6 @@
 import Rec.Util
 import Lean
 
-/-
 inductive Ordinal
   | zero : Ordinal
   | succ : Ordinal → Ordinal
@@ -29,7 +28,7 @@ inductive Tree' (α : Type u)
 inductive List' (α : Type u)
   | nil : List' α
   | cons : Tree' α → List' α → List' α
-  | mk : Option (Tree α × List' α) → List' α
+  | mk : Option (Tree' α × List' α) → List' α
 
 end
 
@@ -38,7 +37,6 @@ deriving instance Repr for Lean.InductiveVal
 deriving instance Repr for Lean.ConstructorVal
 deriving instance Repr for Lean.RecursorRule
 deriving instance Repr for Lean.RecursorVal
--/
 
 namespace Lean.Expr
 
@@ -72,14 +70,9 @@ def compileRec (rv : RecursorVal) : TermElabM Unit := do
   unless rv.numMotives == 1 do
     throwError "mutual/nested inductives unsupported"
   let levels := rv.levelParams.map .param
-  let name ← applyVisibility .private <| rv.name.appendAfter "'"
-  addPreDefinitions #[{
-    ref := ← getRef
-    kind := .def
-    levelParams := rv.levelParams
-    modifiers := {}
-    declName := name
-    type := rv.type
+  let name ← mkFreshUserName rv.name
+  addAndCompile <| .mutualDefnDecl [{ rv with
+    name
     value := ← forallTelescope rv.type λ xs body => do
       let major ← inferType xs[rv.getMajorIdx]!
       let val := .const (mkCasesOnName major.getAppFn.constName!) levels
@@ -89,38 +82,34 @@ def compileRec (rv : RecursorVal) : TermElabM Unit := do
       let val := mkAppN val <| rv.rules.toArray.map λ rule =>
         .beta (rule.rhs.replaceConst rv.name name) xs[:rv.getFirstIndexIdx]
       mkLambdaFVars xs val
-  }] {}
-  let eqn := .const (← getUnfoldEqnFor? name true).get! levels
+    hints := .abbrev
+    safety := .partial
+  }]
   let old := .const rv.name levels
   let new := .const name levels
-  let name ← applyVisibility .private <| rv.name.appendAfter "_eq'"
-  addDecl <| .thmDecl {
+  let name ← mkFreshUserName <| rv.name.str "eq"
+  addDecl <| .mutualDefnDecl [{
     name
-    type := ← mkEq old new
     levelParams := rv.levelParams
-    value := ← forallTelescope rv.type λ xs body => do
-      let eqn := mkAppN eqn xs[:rv.getFirstIndexIdx]
-      let motive ← mkLambdaFVars xs[rv.getFirstIndexIdx:] <| ← mkEq (mkAppN old xs) (mkAppN new xs)
-      let motiveLevel := (← inferType body).sortLevel!
-      let levels :=
-        if motiveLevel.isZero
-        then levels
-        else .zero :: levels.tail!
-      let pf := .const rv.name levels
+    type := ← mkEq old new
+    value := ← forallTelescope rv.type λ xs _ => do
+      let pf := .const rv.name (.zero :: levels.tail!)
       let pf := mkAppN pf xs[:rv.numParams]
+      let old := mkAppN old xs
+      let new := mkAppN new xs
+      let motive ← mkLambdaFVars xs[rv.getFirstIndexIdx:] <| ← mkEq old new
       let pf := .app pf motive
-      let pf := mkAppN pf <| ← (rv.rules.toArray.zip xs[rv.getFirstMinorIdx:].toArray).mapM λ (rule, minor) => do
-        let minorTy ← inferType minor
-        forallTelescope (minorTy.replaceFVar xs[rv.numParams]! motive) λ ys body' => do
-          let pf' ← mkEqRefl <| mkAppN minor ys[:rule.nfields]
+      let pf := mkAppN pf <| ← rv.rules.toArray.zip xs[rv.getFirstMinorIdx:] |>.mapM λ (rule, minor) => do
+        forallTelescope ((← inferType minor).replaceFVar xs[rv.numParams]! motive) λ ys _ => do
+          let minor := mkAppN minor ys[:rule.nfields]
+          let pf' ← mkEqRefl minor
           let pf' ← ys[rule.nfields:].foldlM (λ pf' y => do mkCongr pf' (← mkFunExts y)) pf'
-          let eqn := mkAppN eqn body'.getAppArgs
-          let eqn ← mkEqSymm eqn
-          let pf' ← mkEqTrans pf' eqn
           mkLambdaFVars ys pf'
       let pf := mkAppN pf xs[rv.getFirstIndexIdx:]
       xs.foldrM (λ x pf => do mkFunExt (← mkLambdaFVars #[x] pf)) pf
-  }
+    hints := .opaque
+    safety := .partial
+  }]
   Compiler.CSimp.add name .global
 
 open Lean Meta Elab Command in 
@@ -129,9 +118,9 @@ elab "#compile " i:ident : command => liftTermElabM <| withRef i do
   _ ← getConstInfoInduct i
   compileRec <| ← getConstInfoRec <| mkRecName i
 
-/-
 #compile Nat
 #compile List
+/-
 #compile Fin2
 --#compile Vec
 --#compile Ordinal
@@ -182,30 +171,27 @@ open Lean Meta Elab in
 def compileMutualRecs (name : Name) : TermElabM Unit := do
   let rvs ← getMutualRecs name
   let names ← rvs.mapM λ name _ => applyVisibility .private <| name.appendAfter "'"
-  addPreDefinitions (← rvs.foldM (λ defs name rv =>
-    return defs.push {
-      ref := ← getRef
-      kind := .def
+  addAndCompile <| .mutualDefnDecl (← rvs.foldM (λ defs name rv =>
+    return {
+      name := names.find! name
       levelParams := rv.levelParams
-      modifiers := {}
-      declName := names.find! name
       type := rv.type
-      value := ← forallTelescope rv.type λ xs body => do
+      value := dbgTraceVal <| ← forallTelescope rv.type λ xs body => do
         let major ← inferType xs[rv.getMajorIdx]!
         let motiveLevel := (← inferType body).sortLevel!
-        let levels :=
-          if motiveLevel.isZero
-          then major.getAppFn.constLevels!
-          else motiveLevel :: major.getAppFn.constLevels!
+        let levels := motiveLevel :: major.getAppFn.constLevels!
         let val := .const (mkCasesOnName major.getAppFn.constName!) levels
+        logInfo m!"{val} <- {major}"
         let val := mkAppN val major.getAppArgs[:major.getAppNumArgs - rv.numIndices]
         let val := .app val <| ← mkLambdaFVars xs[rv.getFirstIndexIdx:] body
         let val := mkAppN val xs[rv.getFirstIndexIdx:]
         let val := mkAppN val <| rv.rules.toArray.map λ rule =>
           .beta (rule.rhs.replaceConsts names) xs[:rv.getFirstIndexIdx]
         mkLambdaFVars xs val
-    }
-  ) (.mkEmpty rvs.size)) {}
+      hints := .abbrev
+      safety := .partial
+    } :: defs
+  ) [])
   let rvs := rvs.map λ name rv =>
     let levels := rv.levelParams.map .param
     (rv, levels, .const name levels, .const (names.find! name) levels)
@@ -218,14 +204,13 @@ def compileMutualRecs (name : Name) : TermElabM Unit := do
       recs := recs.set! (rv.type.getForallBinderNames.length - 1 - rv.numParams - rv.type.getForallBody.getAppFn.bvarIdx!) name
     return recs.map Option.get!
   let motives := recs.map motives.find!
-  let rules : Array (RecursorRule × Expr) ← recs.foldlM (λ rules name => do
-    let (rv, levels, _) := rvs.find! name
-    let eqn := .const (← getUnfoldEqnFor? (names.find! name) true).get! levels
-    return rules.appendList <| rv.rules.map λ rule => (rule, eqn)
+  let rules ← recs.foldlM (λ rules name => do
+    let (rv, _) := rvs.find! name
+    return rules.appendList <| rv.rules.map λ rule => (rule)
   ) #[]
   for (_, (rv, levels, old, new)) in rvs do
     let name ← applyVisibility .private <| rv.name.appendAfter "_eq'"
-    addDecl <| .thmDecl {
+    addDecl <| .mutualDefnDecl [{
       name
       type := ← mkEq old new
       levelParams := rv.levelParams
@@ -239,22 +224,20 @@ def compileMutualRecs (name : Name) : TermElabM Unit := do
         let pf := .const rv.name levels
         let pf := mkAppN pf xs[:rv.numParams]
         let pf := mkAppN pf motives
-        let pf := mkAppN pf <| ← (rules.zip xs[rv.getFirstMinorIdx:].toArray).mapM λ ((rule, eqn), minor) => do
-          let eqn := mkAppN eqn xs[:rv.getFirstIndexIdx]
+        let pf := mkAppN pf <| ← (rules.zip xs[rv.getFirstMinorIdx:].toArray).mapM λ (rule, minor) => do
           let minorTy ← inferType minor
           let minorTy ← forallTelescope rv.type λ xs' _ =>
             let minorTy := minorTy.replaceFVars xs[rv.numParams:rv.getFirstIndexIdx] xs'[rv.numParams:rv.getFirstIndexIdx]
             return motives.zip xs'[rv.numParams:rv.getFirstIndexIdx].toArray |>.foldl (λ minorTy (t, f) => minorTy.replaceFVar f t) minorTy -- TODO remove foldl
-          forallTelescope minorTy λ ys body' => do
+          forallTelescope minorTy λ ys _ => do
             let pf' ← mkEqRefl <| mkAppN minor ys[:rule.nfields]
             let pf' ← ys[rule.nfields:].foldlM (λ pf' y => do mkCongr pf' (← mkFunExts y)) pf'
-            let eqn := mkAppN eqn body'.getAppArgs
-            let eqn ← mkEqSymm eqn
-            let pf' ← mkEqTrans pf' eqn
             mkLambdaFVars ys pf'
         let pf := mkAppN pf xs[rv.getFirstIndexIdx:]
         xs.foldrM (λ x pf => do mkFunExt (← mkLambdaFVars #[x] pf)) pf
-    }
+      hints := .opaque
+      safety := .partial
+    }]
     Compiler.CSimp.add name .global
 
 open Lean Meta Elab Command in 
@@ -283,3 +266,12 @@ inductive Wtf
   | mk : (Unit → Nat → Wtf) → Wtf
   -/
   -/
+
+inductive Foo : Nat → Type 1
+  | mk : List (Foo n) → Foo n
+  --| inc : Foo n → Foo n.succ
+
+#check Foo.rec
+#check Foo.rec_1
+set_option pp.all true
+#compile mutual Foo

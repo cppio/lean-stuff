@@ -1,0 +1,5 @@
+-- non mutual Prop with 1 constructor
+
+-- ss: every argument is either prop or occurs in return typ
+-- k: no arguments
+-- proj: every argument is prop or not bound

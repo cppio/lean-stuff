@@ -24,9 +24,9 @@ where
     | ord => ord
 
 elab tk:"#print prefix " i:ident : command => do
-  let i := i.getId
+  let i ← resolveGlobalConstNoOverload i
   let cs := (← getEnv).constants.fold (fun cs name info =>
-    if i.isPrefixOf name then cs.push info else cs) #[]
+    if i.isPrefixOf name || i.isPrefixOf (privateToUserName? name |>.getD .anonymous) then cs.push info else cs) #[]
   let cs := cs.qsort (nameCmp ·.name ·.name == .lt)
   logInfoAt tk <| joinMap cs fun info => info.name ++ " : " ++ info.type
 
@@ -42,9 +42,9 @@ private def modifyLocalDecl [Monad m] (lctx : LocalContext) (e : Expr) (f : Loca
 
 open Meta
 
-elab "opaque_def% " ident:ident : term => do
-  let .opaqueInfo info ← getConstInfo ident.getId
-    | throwError "'{ident}' is not an opaque definition"
+elab "opaque_def% " i:ident : term => do
+  let .opaqueInfo info ← getConstInfo <| ← resolveGlobalConstNoOverload i
+    | throwError "'{i}' is not an opaque definition"
   let levels ← mkFreshLevelMVars info.levelParams.length
   let eq ← mkEq (.const info.name levels) (info.value.instantiateLevelParams info.levelParams levels)
   return .app (.const ``lcProof []) eq
@@ -97,6 +97,7 @@ elab "reduce% " term:term : term <= type? => do
   reduceStar e
 
 elab tk:"#print instances " t:term : command => Command.runTermElabM fun _ => do
+  let t ← `($t ..)
   let e ← Term.elabType t
   let insts ← SynthInstance.getInstances e
   logInfoAt tk <| ← joinMapM insts λ inst => return inst ++ " : " ++ (← inferType inst)
@@ -135,3 +136,27 @@ macro_rules
       private def Impl : Sig where $[$fields $binds:bracketedBinder* := $vals]*
       private opaque Imp : Sig := Impl
       $(⟨defs⟩):command)
+
+syntax (name := rawDef) "#def " ident (".{" ident,+ "}")? " : " term " := " term : command
+
+open Term Command
+
+@[command_elab rawDef]
+unsafe def rawDefElab : CommandElab
+  | `(rawDef| #def $n $[.{$ls?,*}]? : $t := $v) => liftTermElabM do
+    let name := n.getId
+    let levelParams :=
+      match ls? with
+      | some ls => ls.getElems.map TSyntax.getId |>.toList
+      | _ => []
+    let type ← evalTerm Expr (.const ``Expr []) t
+    let value ← evalTerm Expr (.const ``Expr []) v
+    addAndCompile <| .defnDecl {
+      name
+      levelParams
+      type
+      value
+      hints := .abbrev
+      safety := .safe
+    }
+  | _ => throwUnsupportedSyntax
