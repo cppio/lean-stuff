@@ -116,15 +116,18 @@ macro_rules
     let inferInstance ← ``(inferInstance)
     let vals ← (unsafes.zip vals).mapM λ (safety, val?) =>
       let val := val?.getD inferInstance
-      if safety.isSome then `(λ _ ↦ $val) else return val
+      if safety.isSome then ``(λ _ ↦ $val) else return val
 
     let inst ← Macro.addMacroScope "inst"
     let fields := names.mapIdx λ idx name? => mkIdent <| toString <| match name? with | some name => name.getId | none => inst.num idx
 
-    let fieldTys ← (unsafes.zip tys).mapM λ (safety, ty) => if safety.isSome then `(UnsafeMarker → $ty) else return ty
+    let nameFields : NameMap _ := .fromArray (cmp := _) <| (names.zip fields).filterMap λ | (some name, field) => some (name.getId, field.raw) | _ => none
+    let fieldTys ← (unsafes.zip tys).mapM λ (safety, ty) =>
+      let ty := ⟨Id.run <| ty.raw.replaceM (nameFields.find? ·.getId)⟩
+      if safety.isSome then ``(UnsafeMarker → $ty) else return ty
 
     let defs := mkNullNode <| ← (unsafes.zip <| kinds.zip <| names.zip <| binds.zip <| fields.zip tys).mapM λ (safety, kind, name?, binds, field, ty) => do
-      let ty ← `(∀ $binds*, $ty)
+      let ty ← ``(∀ $binds*, $ty)
       let val ← if safety.isSome then `(Imp.$field .mk) else `(Imp.$field)
       match kind.raw[0].isToken "instance", name? with
       | false, some name => `($[$safety:unsafe]? def $name : $ty := $val)

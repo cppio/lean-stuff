@@ -7,7 +7,7 @@ open Lean
 abbrev CommandMacroM := StateT (Array Command) MacroM
 
 def CommandMacroM.push (c : CommandMacroM Command) : CommandMacroM Unit :=
-  do modify (·.push (← c))
+  do modify (·.push <| ← c)
 
 def CommandMacroM.run (x : CommandMacroM Unit) : MacroM Command := do
   let (_, cs) ← x #[]
@@ -28,8 +28,8 @@ partial def appHead : Term → Term
 
 structure CtorView where
   id : Ident
+  type : Term
   argTypes : Array (Term × Bool)
-  retType : Term
 
 structure CoInductiveView where
   id : Ident
@@ -49,13 +49,14 @@ def CoInductiveView.ofSyntax : Syntax → MacroM CoInductiveView
       binders
       params
       type := type?.getD <| ← `(Type _)
-      ctors := ids.zipWith types λ ctorId type =>
+      ctors := ← (ids.zip types).mapM λ (ctorId, type) => do
         let (argTypes, _) := splitArrows type
         let argTypes := argTypes.map λ argType =>
           if (appHead argType).raw.matchesIdent id.getId
           then (ty, true)
           else (argType, false)
-        { id := ctorId, argTypes, retType := ty }
+        let type ← joinArrows (argTypes.map (·.fst)).toList ty
+        return { id := ctorId, type, argTypes }
     }
   | _ => Macro.throwUnsupported
 
@@ -70,7 +71,7 @@ def expandCoInductive : Macro := λ stx => CommandMacroM.run do
     let args ← ctor.argTypes.mapM λ
       | (arg, false) => return arg
       | (_, true) => `(@$Approx $view.params* ℓ)
-    joinArrows args.toList (← `(@$Approx $view.params* (.succ ℓ)))
+    joinArrows args.toList <| ← `(@$Approx $view.params* (.succ ℓ))
   CommandMacroM.push `(
     inductive $Approx.{$view.levels,*} $view.binders* : Nat → $view.type
       | $«⋯»:ident : @$Approx $view.params* .zero
@@ -101,7 +102,7 @@ def expandCoInductive : Macro := λ stx => CommandMacroM.run do
     let args ← ctor.argTypes.mapM λ
       | (arg, false) => return arg
       | (_, true) => `(α)
-    joinArrows args.toList (← `(@$Pattern $view.params* α))
+    joinArrows args.toList <| ← `(@$Pattern $view.params* α)
   CommandMacroM.push `(
     inductive $Pattern.{u, $view.levels,*} $view.binders* (α : Type u)
     $[| $ctors:ident : $types]*
@@ -151,9 +152,8 @@ def expandCoInductive : Macro := λ stx => CommandMacroM.run do
           let x := mkIdent <| ← Elab.Term.mkFreshBinderName
           return (x, ← `($(x).val ℓ), #[← `($(x).property ℓ)])
       let (args₁, args₂) := args.unzip
-      let type ← joinArrows (ctor.argTypes.map (·.fst)).toList ctor.retType
       CommandMacroM.push `(
-        def $ctor.id {$view.params*} : $type := λ $binders* => {
+        def $ctor.id {$view.params*} : $ctor.type := λ $binders* => {
           val := λ | .zero => .«⋯» | .succ ℓ => .$ctor.id $args₁*
           property := λ | .zero => .«⋯» | .succ ℓ => .$ctor.id $args₂.flatten*
         }
@@ -260,6 +260,70 @@ def expandCoInductive : Macro := λ stx => CommandMacroM.run do
       $cases $(← ctors.mapM λ ctor => `(.$ctor))*
   )
 
+  let Impl := mkIdent <| view.id.getId ++ `Impl
+  let Impl' := mkIdent <| view.id.getId ++ `Impl'
+  let types ← view.ctors.mapM λ ctor => do
+    let args ← ctor.argTypes.mapM λ
+      | (arg, false) => return arg
+      | (_, true) => `(Thunk (@$Impl' $view.params*))
+    joinArrows args.toList <| ← `(@$Impl' $view.params*)
+  CommandMacroM.push `(
+    unsafe inductive $Impl'.{$view.levels,*} $view.binders*
+    $[| $ctors:ident : $types]*
+    unsafe def $Impl.{$view.levels,*} $view.binders* := Thunk (@$Impl' $view.params*)
+  )
+
+  let Impl_corec := mkIdent <| Impl.getId ++ `corec
+  let (binders, args) := Array.unzip <| ← view.ctors.mapM λ ctor => do
+    let (binders, args) := Array.unzip <| ← ctor.argTypes.mapM λ
+      | (_, false) => do
+        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
+        return (x, x)
+      | (_, true) => do
+        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
+        return (x, ← `($Impl_corec f $x))
+    return (binders, ← `(.$ctor.id $args*))
+  CommandMacroM.push `(
+    unsafe def $Impl_corec {$view.params* α} (f : α → @$Pattern $view.params* α) (x : α) : @$Impl $view.params* := .mk λ _ =>
+      match f x with
+      $[| .$ctors $binders* => $args]*
+  )
+
+  let wrappers ← CommandMacroM.run do
+    for ctor in view.ctors do
+      let (types, args) := Array.unzip <| ← ctor.argTypes.mapM λ
+        | (arg, false) => return (arg, mkIdent <| ← Elab.Term.mkFreshBinderName)
+        | (_, true) => return (← `(@$Impl $view.params*), mkIdent <| ← Elab.Term.mkFreshBinderName)
+      let type ← joinArrows types.toList <| ← `(@$Impl $view.params*)
+      CommandMacroM.push `(
+        unsafe def $ctor.id {$view.params*} : $type := λ $args:ident* =>
+          .pure (.$ctor.id $args*)
+      )
+  CommandMacroM.push `(
+    namespace $Impl
+    $wrappers
+    end $Impl
+  )
+
+  let Impl_cases := mkIdent <| Impl.getId ++ `cases
+  let (args, minors) := Array.unzip <| ← view.ctors.mapM λ ctor => do
+    let args ← ctor.argTypes.mapM λ _ => return mkIdent <| ← Elab.Term.mkFreshBinderName
+    return (args, ← `(Parser.Term.bracketedBinderF| ($ctor.id : ∀ $args:ident*, motive ($ctor.id $args*))))
+  let (ctors', args') := (ctors, args)
+  CommandMacroM.push `(
+    @[elab_as_elim]
+    unsafe def $Impl_cases.{u} {$view.params*} {motive : @$Impl $view.params* → Sort u} $minors* x : motive x :=
+      (id rfl : .pure x.get = x) ▸
+      match x.get with
+      $[| .$ctors $args* => $ctors' $args'*]*
+  )
+
+  let Impl_unfold := mkIdent <| Impl.getId ++ `unfold
+  CommandMacroM.push `(
+    unsafe def $Impl_unfold {$view.params*} : @$Impl $view.params* → @$Pattern $view.params* (@$Impl $view.params*) :=
+      $Impl_cases $(← ctors.mapM λ ctor => `(.$ctor))*
+  )
+
 coinductive CoNat
   | zero : CoNat
   | succ : CoNat → CoNat
@@ -280,6 +344,9 @@ theorem CoNat.unfold_zero : unfold zero = .zero := rfl
 @[simp]
 theorem CoNat.unfold_succ n : unfold (succ n) = .succ n := rfl
 
+theorem CoNat.succ.inj (h : succ n = succ n') : n = n' :=
+  Subtype.eq <| funext λ ℓ => Approx.succ.inj <| congrArg (·.val ℓ.succ) h
+
 @[simp]
 theorem CoList.cases_nil nil cons : @cases α motive nil cons .nil = nil := rfl
 
@@ -291,6 +358,10 @@ theorem CoList.unfold_nil : @unfold α nil = .nil := rfl
 
 @[simp]
 theorem CoList.unfold_cons x xs : @unfold α (cons x xs) = .cons x xs := rfl
+
+theorem CoList.cons.inj (h : cons x xs = cons x' xs') : x = x' ∧ xs = xs' :=
+  have := λ ℓ : Nat => Approx.cons.inj <| congrArg (·.val ℓ.succ) h
+  ⟨this .zero |>.left, Subtype.eq <| funext (this · |>.right)⟩
 
 @[simp]
 theorem CoNat.unfold_corec f x : unfold (@corec α f x) = (f x).map (corec f) := by
@@ -402,34 +473,28 @@ theorem CoNat.add_ofNat₂ : add (ofNat₂ a) (ofNat₂ b) = ofNat₂ (a + b) :=
       sorry
   | succ b ih =>
     sorry
-  sorry
 
-/-
-inductive CoNat'
-  | zero : CoNat'
-  | succ' : Thunk CoNat' → CoNat'
-  deriving Inhabited
+coinductive Stream'
+  | cons : Nat → Stream' → Stream'
 
-def CoNat'.succ (n : CoNat') : CoNat' :=
-  succ' n
-
-def CoNat'.cases {motive : CoNat' → Sort u} (zero : motive zero) (succ : ∀ n, motive (succ n)) n : motive n :=
+def Stream'.nth (n : Nat) (s : Stream') : Nat :=
+  let ⟨hd, tl⟩ := s.unfold
   match n with
-  | .zero => zero
-  | .succ' n => succ n.get
+  | .zero => hd
+  | .succ n => nth n tl
 
-partial def CoNat'.corec (f : α → Option α) (x : α) : CoNat' :=
-  match f x with
-  | none => zero
-  | some x => succ' (corec f x)
+def fib : Stream' :=
+  .corec (λ (a, b) => ⟨dbgTraceVal a, (b, a + b)⟩) (0, 1)
 
-structure Hide (α : Type u) where
-  x : α
+#eval fib.nth 6
 
-instance : Repr (Hide α) where
-  reprPrec _ _ := "⟨hidden⟩"
+unsafe def Stream'.Impl.nth (n : Nat) (s : Stream'.Impl) : Nat :=
+  let ⟨hd, tl⟩ := s.unfold
+  match n with
+  | .zero => hd
+  | .succ n => nth n tl
 
-#eval 2 + 2
-#eval Hide.mk (CoNat'.corec some ())
-#eval 2 + 2
--/
+unsafe def fib' : Stream'.Impl :=
+  .corec (λ (a, b) => ⟨dbgTraceVal a, (b, a + b)⟩) (0, 1)
+
+#eval fib'.nth 6
