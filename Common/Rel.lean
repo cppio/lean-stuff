@@ -13,6 +13,12 @@ class Symmetric : Prop where
 class Transitive : Prop where
   trans : r x y → r y z → r x z
 
+namespace Eq
+instance instReflexive : Reflexive (@Eq α) := ⟨@refl α⟩
+instance instSymmetric : Symmetric (@Eq α) := ⟨@symm α⟩
+instance instTransitive : Transitive (@Eq α) := ⟨@trans α⟩
+end Eq
+
 inductive ReflexiveClosure : α → α → Prop
   | base : r x y → ReflexiveClosure x y
   | refl : ReflexiveClosure x x
