@@ -2,20 +2,6 @@ import Mathlib.Data.Nat.Basic
 
 open Lean
 
-abbrev BinderIdent := TSyntax [identKind, ``Parser.Term.hole]
-instance : Coe BinderIdent (TSyntax ``binderIdent) := ⟨(⟨·⟩)⟩
-
--- TODO: support ∀
-partial def splitDepArrows (t : Term) (args : Array (BinderIdent × Term) := #[]) : Array (BinderIdent × Term) × Term :=
-  match t with
-  | `($type → $ret)
-  | `([$type] → $ret) => splitDepArrows ret <| args.push (⟨mkHole type⟩, type)
-  | `(($arg* : $type $[$_]?) → $ret)
-  | `(⦃$arg* : $type⦄ → $ret)
-  | `({$arg* : $type} → $ret) => splitDepArrows ret <| args ++ arg.map (·, type)
-  | `([$arg : $type] → $ret) => splitDepArrows ret <| args.push (arg, type)
-  | ret => (args, ret)
-
 abbrev CommandMacroM := StateT (Array Command) MacroM
 
 def CommandMacroM.push (c : CommandMacroM Command) : CommandMacroM Unit :=
@@ -25,153 +11,266 @@ def CommandMacroM.run (x : CommandMacroM Unit) : MacroM Command := do
   let (_, cs) ← x #[]
   return ⟨mkNullNode cs⟩
 
-partial def splitArrows (t : Term) (args : Array Term := #[]) : Array Term × Term :=
+section
+
+open Parser Term
+
+instance : Coe (TSyntax ``hole) Term := ⟨(⟨·⟩)⟩
+
+def mkHole : TSyntax ``hole :=
+  mkNode ``hole #[.atom .none "_"]
+
+structure BinderView where
+  id : Ident
+  type : Term
+  info : BinderInfo := .default
+
+def BinderView.toImplicit (binder : BinderView) : BinderView :=
+  if binder.info == .default
+  then { binder with info := .implicit }
+  else binder
+
+def BinderView.toBinder (binder : BinderView) : MacroM (TSyntax ``bracketedBinder) :=
+  match binder.info with
+  | .default        => `(bracketedBinderF| ($binder.id : $binder.type))
+  | .implicit       => `(bracketedBinderF| {$binder.id : $binder.type})
+  | .strictImplicit => `(bracketedBinderF| ⦃$binder.id : $binder.type⦄)
+  | .instImplicit   => `(bracketedBinderF| [$binder.id : $binder.type])
+
+def mkFreshId [Monad m] [MonadQuotation m] (n := `x) : m Ident :=
+  return mkIdent <| ← withFreshMacroScope <| MonadQuotation.addMacroScope n
+
+def getOrFresh : Option Ident → MacroM Ident
+  | some id => return id
+  | none => mkFreshId
+
+def getOrFreshHole : TSyntax [identKind, ``hole] → MacroM Ident
+  | `(Term.ident| $id:ident) => return id
+  | _ => mkFreshId
+
+def BinderView.fromBinder (stx : TSyntax [identKind, ``hole, ``bracketedBinder]) (defaultType? : Option Term := none) : MacroM (Array BinderView) :=
+  match stx with
+  | `(Term.ident| $id:ident)
+  | `(hole| $id:hole) => return #[{ id := ← getOrFreshHole id, type := defaultType?.getD mkHole }]
+  | `(bracketedBinderF| ($args* $[: $type?]? $[$_]?)) => common args type? .default
+  | `(bracketedBinderF| ⦃$args* $[: $type?]?⦄) => common args type? .strictImplicit
+  | `(bracketedBinderF| {$args* $[: $type?]?}) => common args type? .implicit
+  | `(bracketedBinderF| [$[$id? :]? $type]) => return #[{ id := ← getOrFresh id?, type, info := .instImplicit }]
+  | _ => throw <| .error stx "invalid binder"
+where
+  common args type? info := do
+    unless defaultType?.isNone do throw <| .error stx "invalid binder"
+    args.mapM λ arg => return { id := ← getOrFreshHole arg, type := type?.getD mkHole, info }
+
+def BinderView.fromBinders (stx : TSyntaxArray [identKind, ``hole, ``bracketedBinder]) (defaultType? : Option Term := none) : MacroM (Array BinderView) :=
+  return .flatten <| ← stx.mapM (fromBinder · defaultType?)
+
+end
+
+partial def splitArrows (t : Term) (args : Array BinderView := #[]) : MacroM (Array BinderView × Term) :=
   match t with
-  | `($arg → $ret) => splitArrows ret (args.push arg)
-  | _ => (args, t)
+  | `($type → $ret) => do splitArrows ret <| args.push { id := ← mkFreshId, type }
+  | `($arg:bracketedBinder → $ret) => do splitArrows ret <| args.append <| ← BinderView.fromBinder arg
+  | `(∀ $arg* $[: $type?]?, $ret) => do splitArrows ret <| args.append <| ← BinderView.fromBinders arg type?
+  | ret => return (args, ret)
 
-partial def joinArrows : List Term → Term → MacroM Term
-  | [], r => return r
-  | l :: ls, r => do `($l → $(← joinArrows ls r))
+def joinArrows (args : Array BinderView) : Term → MacroM Term :=
+  go args.toListRev
+where
+  go
+  | [], ret => return ret
+  | arg :: args, ret => do go args <| ← `($(← arg.toBinder):bracketedBinder → $ret)
 
-partial def appHead : Term → Term
-  | `($fn $_) => appHead fn
-  | t => t
+partial def splitApp : Term → Term × Array Term
+  | `($fn $args*) => let (fn', args') := splitApp fn; (fn', args' ++ args)
+  | `(($t)) => splitApp t
+  | t => (t, #[])
 
-partial def appTail : Term → Array Term
-  | `($_ $args*) => args
-  | _ => #[]
+partial def getAppHeadId : Term → Option Ident
+  | `($t $_*) => getAppHeadId t
+  | `(($t)) => getAppHeadId t
+  | `($id:ident)
+  | `(@$id:ident) => some id
+  | _ => none
 
-syntax (name := coinductive) "coinductive " declId bracketedBinder* (" : " term)? (ppLine "| " ident " : " term)* : command
+def appHeadMatches (t : Term) (name : Name) : Bool :=
+  match getAppHeadId t with
+  | some id => id.getId.isSuffixOf name
+  | none => false
+
+syntax (name := coinductive) "coinductive " declId optDeclSig ("\n| " Parser.rawIdent optDeclSig)* : command
 
 structure CtorView where
   id : Ident
-  type : Term
-  argTypes : Array (Term × Bool)
+  args : Array (BinderView × Bool)
 
 structure CoInductiveView where
   id : Ident
   levels : Array Ident
   binders : TSyntaxArray ``Parser.Term.bracketedBinder
+  implicitBinders : TSyntaxArray ``Parser.Term.bracketedBinder
   params : Array Ident
   type : Term
   ctors : Array CtorView
+  ctorIds : Array Ident
 
 def CoInductiveView.ofSyntax : Syntax → MacroM CoInductiveView
-  | `(coinductive $id$[.{$levels?,*}]? $binders* $[: $type?]? $[| $ids : $types]*) => do
-    let params := binders.map Elab.Command.getBracketedBinderIds |>.flatten.map mkIdent
+  | `(coinductive $id$[.{$levels?,*}]? $binders* $[: $type?]? $[| $ctorIds $ctorBinders* $[: $ctorTypes?]?]*) => do
+    let binderViews ← BinderView.fromBinders binders
+    let params := binderViews.map BinderView.id
     let ty ← `(@$id $params*)
     return {
       id
       levels := match levels? with | some levels => levels.getElems | none => #[]
-      binders
+      binders := ← binderViews.mapM BinderView.toBinder
+      implicitBinders := ← binderViews.mapM (·.toImplicit.toBinder)
       params
-      type := type?.getD <| ← `(Type _)
-      ctors := ← (ids.zip types).mapM λ (ctorId, type) => do
-        let (argTypes, retTy) := splitArrows type
-        unless (appHead retTy).raw.matchesIdent id.getId do throw <| .error retTy "unexpected return type"
-        let argTypes := argTypes.map λ argType =>
-          if (appHead argType).raw.matchesIdent id.getId
-          then (ty, true)
-          else (argType, false)
-        let type ← joinArrows (argTypes.map (·.fst)).toList ty
-        return { id := ctorId, type, argTypes }
+      type := ←
+        match type? with
+        | none => `(Type _)
+        | some type => do
+          unless type matches `(Type $_) do throw <| .error type "unsupported type"
+          pure type
+      ctors := ← (ctorIds.zip <| ctorBinders.zip ctorTypes?).mapM λ (ctorId, ctorBinders, ctorType?) => do
+        let (args, retTy) := ←
+          match ctorType? with
+          | some ctorType => splitArrows ctorType
+          | none => pure (#[], ty)
+        unless appHeadMatches retTy id.getId do throw <| .error retTy "unexpected return type"
+        let ctorBinderViews ← BinderView.fromBinders ctorBinders
+        return {
+          id := ctorId
+          args := ctorBinderViews ++ args |>.map λ arg =>
+            if appHeadMatches arg.type id.getId
+            then ({ arg with type := ty }, true)
+            else (arg, false)
+        }
+      ctorIds
     }
   | _ => Macro.throwUnsupported
 
 def defineCoInductive (view : CoInductiveView) : CommandMacroM Unit := do
-  let ctors := view.ctors.map (·.id)
-
   let Approx := mkIdent <| view.id.getId ++ `Approx
   let «⋯» := mkIdent `«⋯»
-  let types ← view.ctors.mapM λ ctor => do
-    let args ← ctor.argTypes.mapM λ
-      | (arg, false) => return arg
-      | (_, true) => `(@$Approx $view.params* ℓ)
-    joinArrows args.toList <| ← `(@$Approx $view.params* (.succ ℓ))
+  let type ← `(@$Approx $view.params* ℓ)
+  let binders ← view.ctors.mapM λ ctor =>
+    ctor.args.mapM λ
+      | (arg, false) => arg.toBinder
+      | (arg, true) => { arg with type }.toBinder
+  let type ← `(@$Approx $view.params* (Nat.succ ℓ))
+  let types := view.ctors.map λ _ => type
   CommandMacroM.push `(
     inductive $Approx.{$view.levels,*} $view.binders* : Nat → $view.type
-      | $«⋯»:ident : @$Approx $view.params* .zero
-    $[| $ctors:ident {ℓ} : $types]*
+      | $«⋯»:ident : @$Approx $view.params* Nat.zero
+    $[| $view.ctorIds:ident {ℓ : Nat} $binders* : $types]*
   )
 
-  let Agree := mkIdent <| view.id.getId ++ `Agree
+  let Agree := mkIdent <| Approx.getId ++ `Agree
+  let type₁ ← `(@$Approx $view.params* ℓ₁)
+  let type₂ ← `(@$Approx $view.params* ℓ₂)
   let (binders, types) := Array.unzip <| ← view.ctors.mapM λ ctor => do
-    let (binders, args) := Array.unzip <| ← ctor.argTypes.mapM λ
-      | (_, false) => do
-        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-        return (#[x], #[], x, x)
-      | (_, true) => do
-        let x₁ := mkIdent <| ← Elab.Term.mkFreshBinderName
-        let x₂ := mkIdent <| ← Elab.Term.mkFreshBinderName
-        return (#[x₁, x₂], #[← `($Agree $x₁ $x₂)], x₁, x₂)
-    let (ihs, args) := args.unzip
+    let (binders, args) := Array.unzip <| ← ctor.args.mapM λ
+      | (arg, false) => return (#[← arg.toBinder], arg.id, arg.id)
+      | (arg, true) => do
+        let x₁ ← mkFreshId arg.id.getId
+        let x₂ ← mkFreshId arg.id.getId
+        let ih ← mkFreshId arg.id.getId
+        return (
+          #[
+            ← { arg with id := x₁, type := type₁ }.toBinder,
+            ← { arg with id := x₂, type := type₂ }.toBinder,
+            ← BinderView.toBinder { id := ih, type := ← `(@$Agree $view.params* ℓ₁ ℓ₂ $x₁ $x₂) }
+          ],
+          x₁,
+          x₂
+        )
     let (args₁, args₂) := args.unzip
-    return (binders.flatten, ← joinArrows ihs.flatten.toList <| ← `($Agree (.$ctor.id $args₁*) (.$ctor.id $args₂*)))
+    return (
+      binders.flatten,
+      ← `(@$Agree $view.params* (Nat.succ ℓ₁) (Nat.succ ℓ₂) (@$ctor.id $view.params* ℓ₁ $args₁*) (@$ctor.id $view.params* ℓ₂ $args₂*))
+    )
   CommandMacroM.push `(
-    inductive $Agree {$view.params*} : ∀ {ℓ₁ ℓ₂}, @$Approx $view.params* ℓ₁ → @$Approx $view.params* ℓ₂ → Prop
-      | $«⋯»:ident {x} : $Agree .«⋯» x
-    $[| $ctors:ident {$binders*} : $types]*
+    inductive $Agree.{$view.levels,*} $view.implicitBinders* : {ℓ₁ ℓ₂ : Nat} → @$Approx $view.params* ℓ₁ → @$Approx $view.params* ℓ₂ → Prop
+      | $«⋯»:ident {ℓ₂ : Nat} {x : @$Approx $view.params* ℓ₂} : @$Agree $view.params* Nat.zero ℓ₂ (@$«⋯» $view.params*) x
+    $[| $view.ctorIds:ident {ℓ₁ ℓ₂ : Nat} $binders* : $types]*
   )
 
   let Pattern := mkIdent <| view.id.getId ++ `Pattern
-  let types ← view.ctors.mapM λ ctor => do
-    let args ← ctor.argTypes.mapM λ
-      | (arg, false) => return arg
-      | (_, true) => `(α)
-    joinArrows args.toList <| ← `(@$Pattern $view.params* α)
+  let type ← `(α)
+  let binders ← view.ctors.mapM λ ctor =>
+    ctor.args.mapM λ
+      | (arg, false) => arg.toBinder
+      | (arg, true) => { arg with type }.toBinder
+  let type ← `(@$Pattern $view.params* α)
+  let types := view.ctors.map λ _ => type
   CommandMacroM.push `(
     inductive $Pattern.{u, $view.levels,*} $view.binders* (α : Type u)
-    $[| $ctors:ident : $types]*
+    $[| $view.ctorIds:ident $binders* : $types]*
   )
 
   let map := mkIdent <| Pattern.getId ++ `map
   let mapApprox := mkIdent <| Pattern.getId ++ `mapApprox
   let mapAgree := mkIdent <| Pattern.getId ++ `mapAgree
   let (binders, args) := Array.unzip <| ← view.ctors.mapM λ ctor => do
-    let (binders, args) := Array.unzip <| ← ctor.argTypes.mapM λ
-      | (_, false) => do
-        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-        return (x, x, #[])
-      | (_, true) => do
-        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-        return (x, ← `(f $x), #[← `(h $x)])
-    let (args₁, args₂) := args.unzip
-    return (← `($ctor.id $binders*), ← `(.$ctor.id $args₁*), ← `(.$ctor.id $args₂.flatten*))
-  let (args₁, args₂) := args.unzip
+    let (binders, args) := Array.unzip <| ← ctor.args.mapM λ
+      | (arg, false) => return (arg.id, arg.id, #[arg.id])
+      | (arg, true) =>
+        return (
+          arg.id,
+          ← `(f $arg.id),
+          #[← `(f $arg.id), ← `(g $arg.id), ← `(h $arg.id)]
+        )
+    let (args₁, args₃) := args.unzip
+    let approxCtor := mkIdent <| Approx.getId ++ ctor.id.getId
+    let agreeCtor := mkIdent <| Agree.getId ++ ctor.id.getId
+    return (
+      ← `(@$ctor.id $view.params* α $binders*),
+      ← `(@$ctor.id $view.params* β $args₁*),
+      ← `(@$approxCtor $view.params* ℓ $args₁*),
+      ← `(@$agreeCtor $view.params* ℓ₁ ℓ₂ $args₃.flatten*)
+    )
+  let (args₁, args) := args.unzip
+  let (args₂, args₃) := args.unzip
   CommandMacroM.push `(
-    def $map {$view.params* α β} (f : α → β) : @$Pattern $view.params* α → @$Pattern $view.params* β
+    def $map.{u, v, $view.levels,*} $view.implicitBinders* {α : Type u} {β : Type v} (f : α → β) : @$Pattern $view.params* α → @$Pattern $view.params* β
     $[| $binders => $args₁]*
-    def $mapApprox {$view.params* α ℓ} (f : α → @$Approx $view.params* ℓ) : @$Pattern $view.params* α → @$Approx $view.params* ℓ.succ
-    $[| $binders => $args₁]*
-    theorem $mapAgree {$view.params* α ℓ₁ ℓ₂} {f : α → @$Approx $view.params* ℓ₁} {g : α → @$Approx $view.params* ℓ₂} {x} (h : ∀ x, $Agree (f x) (g x)) : $Agree ($mapApprox f x) ($mapApprox g x) :=
-      match x with
-      $[| $binders => $args₂]*
+    def $mapApprox.{u, $view.levels,*} $view.implicitBinders* {α : Type u} {ℓ : Nat} (f : α → @$Approx $view.params* ℓ) : @$Pattern $view.params* α → @$Approx $view.params* (Nat.succ ℓ)
+    $[| $binders => $args₂]*
+    theorem $mapAgree.{u, $view.levels,*} $view.implicitBinders* {α : Type u} {ℓ₁ ℓ₂ : Nat} {f : α → @$Approx $view.params* ℓ₁} {g : α → @$Approx $view.params* ℓ₂} (h : (x : α) → @$Agree $view.params* ℓ₁ ℓ₂ (f x) (g x)) : {x : @$Pattern $view.params* α} → @$Agree $view.params* (Nat.succ ℓ₁) (Nat.succ ℓ₂) (@$mapApprox $view.params* α ℓ₁ f x) (@$mapApprox $view.params* α ℓ₂ g x)
+    $[| $binders => $args₃]*
   )
 
   let corec := mkIdent <| view.id.getId ++ `corec
+  let «approx⋯» := mkIdent <| Approx.getId ++ «⋯».getId
+  let «agree⋯» := mkIdent <| Agree.getId ++ «⋯».getId
   CommandMacroM.push `(
-    def $view.id.{$view.levels,*} $view.binders* := { f : ∀ ℓ, @$Approx $view.params* ℓ // ∀ ℓ, $Agree (f ℓ) (f ℓ.succ) }
-    def $corec {$view.params* σ} (f : σ → @$Pattern $view.params* σ) (s : σ) : @$view.id $view.params* where
-      val ℓ := ℓ.rec (λ _ => .«⋯») (λ _ ih s => $mapApprox ih (f s)) s
-      property ℓ := ℓ.rec (λ _ => .«⋯») (λ _ ih _ => $mapAgree ih) s
+    def $view.id.{$view.levels,*} $view.binders* := { f : (ℓ : Nat) → @$Approx $view.params* ℓ // (ℓ : Nat) → @$Agree $view.params* ℓ (Nat.succ ℓ) (f ℓ) (f (Nat.succ ℓ)) }
+    def $corec.{u, $view.levels,*} $view.implicitBinders* {σ : Type u} (f : σ → @$Pattern $view.params* σ) (s : σ) : @$view.id $view.params* where
+      val ℓ := @Nat.rec (λ ℓ => σ → @$Approx $view.params* ℓ) (λ _ => @$«approx⋯» $view.params*) (λ ℓ ih s => @$mapApprox $view.params* σ ℓ ih (f s)) ℓ s
+      property ℓ := Nat.rec (λ _ => @$«agree⋯» $view.params* (Nat.succ Nat.zero) _) (λ ℓ ih s => @$mapAgree $view.params* σ ℓ (Nat.succ ℓ) _ _ ih (f s)) ℓ s
   )
 
   let wrappers ← CommandMacroM.run do
     for ctor in view.ctors do
-      let (binders, args) := Array.unzip <| ← ctor.argTypes.mapM λ
-        | (_, false) => do
-          let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-          return (x, x, #[])
-        | (_, true) => do
-          let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-          return (x, ← `($(x).val ℓ), #[← `($(x).property ℓ)])
+      let (binders, args) := Array.unzip <| ← ctor.args.mapM λ
+        | (arg, false) => return (← arg.toBinder, (arg.id : Term), #[(arg.id : Term)])
+        | (arg, true) =>
+          return (
+            ← arg.toBinder,
+            ← `(Subtype.val $(arg.id) ℓ),
+            #[← `(Subtype.val $(arg.id) ℓ), ← `(Subtype.val $(arg.id) (Nat.succ ℓ)), ← `(Subtype.property $(arg.id) ℓ)]
+          )
       let (args₁, args₂) := args.unzip
+      let approxCtor := mkIdent <| Approx.getId ++ ctor.id.getId
+      let agreeCtor := mkIdent <| Agree.getId ++ ctor.id.getId
       CommandMacroM.push `(
-        def $ctor.id {$view.params*} : $ctor.type := λ $binders* => {
-          val := λ | .zero => .«⋯» | .succ ℓ => .$ctor.id $args₁*
-          property := λ | .zero => .«⋯» | .succ ℓ => .$ctor.id $args₂.flatten*
-        }
+        def $ctor.id.{$view.levels,*} $view.implicitBinders* $binders* : @$view.id $view.params* where
+          val
+          | Nat.zero => @$«approx⋯» $view.params*
+          | Nat.succ ℓ => @$approxCtor $view.params* ℓ $args₁*
+          property
+          | Nat.zero => @$«agree⋯» $view.params* (Nat.succ Nat.zero) _
+          | Nat.succ ℓ => @$agreeCtor $view.params* ℓ (Nat.succ ℓ) $args₂.flatten*
       )
   CommandMacroM.push `(
     namespace $view.id
@@ -181,23 +280,21 @@ def defineCoInductive (view : CoInductiveView) : CommandMacroM Unit := do
 
   let refl := mkIdent <| Agree.getId ++ `refl
   let (binders, args) := Array.unzip <| ← view.ctors.mapM λ ctor => do
-    let (binders, args) := Array.unzip <| ← ctor.argTypes.mapM λ
-      | (_, false) => do
-        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-        return (x, #[])
-      | (_, true) => do
-        let x := mkIdent <| ← Elab.Term.mkFreshBinderName
-        return (x, #[← `($refl)])
-    return (← `(.$ctor.id $binders*), ← `(.$ctor.id $args.flatten*))
+    let (binders, args) := Array.unzip <| ← ctor.args.mapM λ
+      | (arg, false) => return (arg.id, #[arg.id])
+      | (arg, true) => return (arg.id, #[arg.id, arg.id, ← `(@$refl $view.params* ℓ $arg.id)])
+    let approxCtor := mkIdent <| Approx.getId ++ ctor.id.getId
+    let agreeCtor := mkIdent <| Agree.getId ++ ctor.id.getId
+    return (← `(@$approxCtor $view.params* ℓ $binders*), ← `(@$agreeCtor $view.params* ℓ ℓ $args.flatten*))
   CommandMacroM.push `(
-    theorem $refl {$view.params* ℓ} : ∀ {x : @$Approx $view.params* ℓ}, $Agree x x
-      | .«⋯» => .«⋯»
-      $[| $binders => $args]*
+    theorem $refl.{$view.levels,*} $view.implicitBinders* {ℓ : Nat} : (x : @$Approx $view.params* ℓ) → @$Agree $view.params* ℓ ℓ x x
+      | @$«approx⋯» $view.params* => @$«⋯» $view.params* Nat.zero (@$«approx⋯» $view.params*)
+    $[| $binders => $args]*
   )
 
   let trans := mkIdent <| Agree.getId ++ `trans
   let (binders₁, args) := Array.unzip <| ← view.ctors.mapM λ ctor => do
-    let (binders₁, args) := Array.unzip <| ← ctor.argTypes.mapM λ
+    let (binders₁, args) := Array.unzip <| ← ctor.args.mapM λ
       | (_, false) => return (#[], #[], #[])
       | (_, true) => do
         let x₁ := mkIdent <| ← Elab.Term.mkFreshBinderName
@@ -207,11 +304,13 @@ def defineCoInductive (view : CoInductiveView) : CommandMacroM Unit := do
     return (← `(.$ctor.id $binders₁.flatten*), ← `(.$ctor.id $binders₂.flatten*), ← `(.$ctor.id $args.flatten*))
   let (binders₂, args) := args.unzip
   CommandMacroM.push `(
-    theorem $trans {$view.params* ℓ ℓ'} {x₁ : @$Approx $view.params* ℓ} {x₂ : @$Approx $view.params* ℓ.succ} {x₃ : @$Approx $view.params* ℓ'} : $Agree x₁ x₂ → $Agree x₂ x₃ → $Agree x₁ x₃
-      | .«⋯», _ => .«⋯»
-    $[| $binders₁, $binders₂ => $args]*
+    theorem $trans.{$view.levels,*} $view.implicitBinders* {ℓ ℓ' : Nat} {x₁ : @$Approx $view.params* ℓ} {x₂ : @$Approx $view.params* (Nat.succ ℓ)} {x₃ : @$Approx $view.params* ℓ'} : @$Agree $view.params* ℓ (Nat.succ ℓ) x₁ x₂ → @$Agree $view.params* (Nat.succ ℓ) ℓ' x₂ x₃ → @$Agree $view.params* ℓ ℓ' x₁ x₃
+      | @$«⋯» $view.params* (Nat.succ Nat.zero) _, _ => @$«⋯» $view.params* ℓ' x₃
+    --$[| $binders₁, $binders₂ => $args]*
+      | _, _ => sorry
   )
 
+  /-
   let property := mkIdent <| view.id.getId ++ `property
   CommandMacroM.push `(
     theorem $property {$view.params*} (x : @$view.id $view.params*) ⦃ℓ₁ ℓ₂⦄ (h : ℓ₁ ≤ ℓ₂) : $Agree (x.val ℓ₁) (x.val ℓ₂) := by
@@ -399,7 +498,9 @@ def defineCoInductive (view : CoInductiveView) : CommandMacroM Unit := do
         all_goals
           apply this
   )
+  -/
 
+/-
 def defineCoInductiveImpl (view : CoInductiveView) : CommandMacroM Unit := do
   let ctors := view.ctors.map (·.id)
 
@@ -497,21 +598,43 @@ def defineCoInductiveImpl (view : CoInductiveView) : CommandMacroM Unit := do
         $[| .$ctors $binders* => $args]*
       | .inr x => Thunk.get x
   )
+--/
 
 @[macro «coinductive»]
 def expandCoInductive : Macro := λ stx => CommandMacroM.run do
   let view ← CoInductiveView.ofSyntax stx
   defineCoInductive view
-  defineCoInductiveImpl view
+  --defineCoInductiveImpl view
+
+set_option autoImplicit false
+
+set_option pp.explicit true
+set_option trace.Elab.command true
+
+coinductive List'.{u} (α : Type u)
+  | mk {n} (l : List α) : l.length = n → List' α
 
 coinductive CoNat
-  | zero : CoNat
-  | succ : CoNat → CoNat
+  | zero
+  | succ (n : CoNat)
 
-coinductive CoList (α : Type u)
+coinductive CoList.{u} (α : Type u)
   | nil : CoList α
   | cons : α → CoList α → CoList α
 
+#print CoList.Approx.Agree.trans
+theorem CoList.Approx.Agree.trans'.{u} {α : Type u} {ℓ ℓ' : Nat} {x₁ : @CoList.Approx α ℓ} {x₂ : @CoList.Approx α (Nat.succ ℓ)} {x₃ : @CoList.Approx α ℓ'} : @CoList.Approx.Agree α ℓ (Nat.succ ℓ) x₁ x₂ → @CoList.Approx.Agree α (Nat.succ ℓ) ℓ' x₂ x₃ → @CoList.Approx.Agree α ℓ ℓ' x₁ x₃
+  | @Agree.«⋯» α (Nat.succ Nat.zero) _, _ => @Agree.«⋯» α ℓ' x₃
+  | _, _ => sorry
+
+#print CoList.Approx.Agree.trans'
+
+coinductive Tree.{u} (α : Type u) : Type u
+  | leaf : Tree α
+  | node : α → Tree α → Tree α → Tree α
+  | node' : Tree α → Tree α → Tree α
+
+/-
 def CoNat.ofNat₁ : Nat → CoNat
   | .zero => .zero
   | .succ n => .succ (ofNat₁ n)
@@ -750,3 +873,4 @@ instance : LawfulMonad Partial where
   bind_assoc _ _ _ := sorry
 
 --#check Partial.corec
+-/
