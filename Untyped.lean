@@ -123,7 +123,7 @@ def eta_normal : Term → Prop :=
 def K := abs <| abs <| var 1
 def S := abs <| abs <| abs <| app (app (var 2) (var 0)) (app (var 1) (var 0))
 def I := app (app S K) K
- 
+
 def ex := app (abs <| abs <| app (app (var 3) (var 1)) (abs <| app (var 0) (var 2))) (abs <| app (var 4) (var 0))
 #eval ex
 #eval shift 100 ex

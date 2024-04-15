@@ -1,5 +1,3 @@
-import Lean
-
 inductive List'
   | nil : List'
   | cons : Nat → List' → List'

@@ -150,7 +150,7 @@ begin
     assumption,
   },
   case nat.succ : y ih {
-    
+
   },
 
   have : f 1 = (f 1 - f 0).to_nat + f 0,

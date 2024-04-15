@@ -109,7 +109,7 @@ theorem thin_inv : ∀ {n} (x) (y : fin2 n), thick x (thin x y) = some y
 | (n + 1) (fs x) (fs y) := congr_arg ((<$>) fs) $ thin_inv x y
 
 @[simp]
-def check {n} (x : fin2 (n + 1)) : term (n + 1) → option (term n) 
+def check {n} (x : fin2 (n + 1)) : term (n + 1) → option (term n)
 | (ι y) := ι <$> thick x y
 | leaf := some leaf
 | (fork s t) := fork <$> check s <*> check t

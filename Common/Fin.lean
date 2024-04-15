@@ -1,6 +1,3 @@
-theorem Nat.succ_sub {n m : Nat} (h : m ≤ n) : n.succ - m = (n - m).succ :=
-  Nat.sub_eq_of_eq_add <| Nat.succ_add .. ▸ (Nat.sub_add_cancel h).symm ▸ rfl
-
 theorem cast_to_cast (h : x = x') (y : β x) : h ▸ y = cast (congrArg β h) y :=
   by cases h; rfl
 
@@ -26,23 +23,23 @@ theorem cast_app'' {α : Sort u} {β : α → Sort v} (f : ∀ x, β x) {x x'} (
 
 namespace Fin
 
-def zero : Fin (.succ n) := ⟨.zero, n.zero_lt_succ⟩
-def last : Fin (.succ n) := ⟨n, n.lt_succ_self⟩
+def zero' : Fin (.succ n) := ⟨.zero, n.zero_lt_succ⟩
+def last' : Fin (.succ n) := ⟨n, n.lt_succ_self⟩
 def succ' (i : Fin n) : Fin n.succ := ⟨.succ i, Nat.succ_lt_succ i.2⟩
-def castSucc (i : Fin n) : Fin n.succ := ⟨i, .step i.2⟩
+def castSucc' (i : Fin n) : Fin n.succ := ⟨i, .step i.2⟩
 
-@[simp] theorem val_zero : (@zero n).1 = .zero := rfl
-@[simp] theorem val_last : (@last n).1 = n := rfl
+@[simp] theorem val_zero' : (@zero' n).1 = .zero := rfl
+@[simp] theorem val_last' : (@last' n).1 = n := rfl
 @[simp] theorem val_succ' (i : Fin n) : i.succ'.1 = .succ i := rfl
-@[simp] theorem val_castSucc (i : Fin n) : i.castSucc.1 = i := rfl
+@[simp] theorem val_castSucc' (i : Fin n) : i.castSucc'.1 = i := rfl
 
 def addL (i : Fin n) (m : Nat) : Fin (m + n) := ⟨.add i m, m.add_comm n ▸ Nat.add_lt_add_right i.2 m⟩
 def addR (i : Fin n) (m : Nat) : Fin (n + m) := ⟨.add i m, Nat.add_lt_add_right i.2 m⟩
-def castAdd (i : Fin n) (m : Nat) : Fin (n + m) := ⟨i, Nat.le_trans i.2 <| n.le_add_right m⟩
+def castAdd' (i : Fin n) (m : Nat) : Fin (n + m) := ⟨i, Nat.le_trans i.2 <| n.le_add_right m⟩
 
 @[simp] theorem val_addL (i : Fin n) m : (addL i m).1 = .add i m := rfl
 @[simp] theorem val_addR (i : Fin n) m : (addR i m).1 = .add i m := rfl
-@[simp] theorem val_castAdd (i : Fin n) m : (castAdd i m).1 = i := rfl
+@[simp] theorem val_castAdd' (i : Fin n) m : (castAdd' i m).1 = i := rfl
 
 def lift (i : Fin n) (h : n ≤ m) : Fin m := ⟨.add i (m.sub n), (Nat.add_sub_of_le h ▸ Nat.add_lt_add_right i.2 (m.sub n) :)⟩
 def castLe (i : Fin n) (h : n ≤ m) : Fin m := ⟨i, Nat.le_trans i.2 h⟩
@@ -65,35 +62,35 @@ variable {i j : Fin n}
 theorem succ'.inj : succ' i = succ' j → i = j := eq_of_val_eq ∘ Nat.succ.inj ∘ val_eq_of_eq
 @[simp] theorem succ'.injIff : succ' i = succ' j ↔ i = j := ⟨inj, congrArg succ'⟩
 
-@[simp] theorem succ'_ne_zero : succ' i ≠ zero := Nat.succ_ne_zero _ ∘ val_eq_of_eq
-@[simp] theorem zero_ne_succ' : zero ≠ succ' i := succ'_ne_zero.symm
+@[simp] theorem succ'_ne_zero : succ' i ≠ zero' := Nat.succ_ne_zero _ ∘ val_eq_of_eq
+@[simp] theorem zero_ne_succ' : zero' ≠ succ' i := succ'_ne_zero.symm
 
 theorem castSucc.inj : castSucc i = castSucc j → i = j := eq_of_val_eq ∘ val_eq_of_eq
 @[simp] theorem castSucc.injIff : castSucc i = castSucc j ↔ i = j := ⟨inj, congrArg castSucc⟩
 
-@[simp] theorem castSucc_ne_last : castSucc i ≠ last := val_ne (i := i) ∘ val_eq_of_eq
-@[simp] theorem last_ne_castSucc : last ≠ castSucc i := castSucc_ne_last.symm
+@[simp] theorem castSucc_ne_last : castSucc i ≠ last' := val_ne (i := i) ∘ val_eq_of_eq
+@[simp] theorem last_ne_castSucc : last' ≠ castSucc' i := castSucc_ne_last.symm
 
 theorem addR.inj : addR i m = addR j m → i = j := eq_of_val_eq ∘ Nat.add_right_cancel ∘ val_eq_of_eq
 @[simp] theorem addR.injIff : addR i m = addR j m ↔ i = j := ⟨inj, congrArg (addR · m)⟩
 
-theorem castAdd.inj : castAdd i m = castAdd j m → i = j := eq_of_val_eq ∘ val_eq_of_eq
-@[simp] theorem castAdd.injIff : castAdd i m = castAdd j m ↔ i = j := ⟨inj, congrArg (castAdd · m)⟩
+theorem castAdd.inj : castAdd' i m = castAdd' j m → i = j := eq_of_val_eq ∘ val_eq_of_eq
+@[simp] theorem castAdd.injIff : castAdd' i m = castAdd' j m ↔ i = j := ⟨inj, congrArg (castAdd' · m)⟩
 
 @[simp] theorem addR_zero : addR i 0 = i := rfl
-@[simp] theorem castAdd_zero : castAdd i 0 = i := rfl
+@[simp] theorem castAdd_zero' : castAdd' i 0 = i := rfl
 
 @[simp] theorem addR_one : addR i 1 = succ' i:= rfl
-@[simp] theorem castAdd_one : castAdd i 1 = castSucc i := rfl
+@[simp] theorem castAdd_one' : castAdd' i 1 = castSucc' i := rfl
 
 @[simp] theorem lift_refl : lift i h = i := eq_of_val_eq <| congrArg i.1.add n.sub_self
 @[simp] theorem castLe_refl : castLe i h = i := rfl
 
 @[simp] theorem lift_add : lift i (h : n ≤ n.add k) = addR i k := eq_of_val_eq <| congrArg i.1.add <| n.add_sub_cancel_left k
-@[simp] theorem castLe_add : castLe i (h : n ≤ n.add k) = castAdd i k := rfl
+@[simp] theorem castLe_add : castLe i (h : n ≤ n.add k) = castAdd' i k := rfl
 
 @[simp] theorem succ'_succ' : succ' (succ' i) = addR i 2 := rfl
-@[simp] theorem castSucc_castSucc : castSucc (castSucc i) = castAdd i 2 := rfl
+@[simp] theorem castSucc_castSucc : castSucc' (castSucc' i) = castAdd' i 2 := rfl
 
 @[simp] theorem addR_addR : addR (addR i k) k' = lift i (Nat.le_trans (n.le_add_right k) <| (n.add k).le_add_right k') := eq_of_val_eq <| by dsimp; sorry
 @[simp] theorem castAdd_castAdd : castAdd (castAdd i k) k' = castLe i (Nat.le_trans (n.le_add_right k) <| (n.add k).le_add_right k') := rfl
@@ -143,19 +140,19 @@ end
 
 def elim {α : Fin .zero → Sort u} i : α i := nomatch i
 
-def cases {α : Fin (.succ n) → Sort u} (zero : α zero) (succ : ∀ i, α (succ' i)) : ∀ i, α i
+def cases' {α : Fin (.succ n) → Sort u} (zero : α zero') (succ : ∀ i, α (succ' i)) : ∀ i, α i
   | ⟨.zero, _⟩ => zero
   | ⟨.succ i, h⟩ => succ ⟨i, Nat.lt_of_succ_lt_succ h⟩
 
-def rcases {α : Fin (.succ n) → Sort u} (castSucc : ∀ i, α (castSucc i)) (last : α last) i : α i :=
+def rcases {α : Fin (.succ n) → Sort u} (castSucc : ∀ i, α (castSucc' i)) (last : α last') i : α i :=
   if h : i = _
   then h ▸ last
   else castSucc ⟨i, Nat.lt_of_le_of_ne (Nat.le_of_lt_succ i.2) (h <| eq_of_val_eq ·)⟩
 
-@[simp] theorem cases_zero zero succ : @cases n α zero succ .zero = zero := rfl
-@[simp] theorem cases_succ' zero succ i : @cases n α zero succ i.succ' = succ i := rfl
-@[simp] theorem rcases_last castSucc last : @rcases n α castSucc last .last = last := dif_pos rfl
-@[simp] theorem rcases_castSucc castSucc last i : @rcases n α castSucc last i.castSucc = castSucc i := dif_neg castSucc_ne_last
+@[simp] theorem cases_zero' zero succ : @cases n α zero succ .zero' = zero := rfl
+@[simp] theorem cases'_succ' zero succ i : @cases n α zero succ i.succ' = succ i := rfl
+@[simp] theorem rcases_last' castSucc last : @rcases n α castSucc last .last' = last := dif_pos rfl
+@[simp] theorem rcases_castSucc' castSucc last i : @rcases n α castSucc last i.castSucc' = castSucc i := dif_neg castSucc_ne_last
 
 @[simp] theorem cases_zero_succ xs : @cases n α (xs zero) (xs ·.succ') = xs := funext <| cases rfl λ _ => rfl
 @[simp] theorem rcases_castSucc_last xs : @rcases n α (xs ·.castSucc) (xs last) = xs := funext <| rcases (rcases_castSucc _ _) (rcases_last ..)

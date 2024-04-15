@@ -731,14 +731,14 @@ open Term' (abs)
 def Y : Term := abs λ f => (abs λ x => f (x x)) (abs λ x => f (x x))
 
 #eval Lambda.Untyped.Y
-#eval repr @Y         
+#eval repr @Y
 
 def Θ : Term :=
   let A := abs λ f => abs λ g => g (f f g)
   A A
 
 #eval Lambda.Untyped.Θ
-#eval repr @Θ         
+#eval repr @Θ
 
 def Fin2.pred : Fin2 n → Option (Fin2 n.pred)
   | .zero => none

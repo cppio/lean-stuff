@@ -20,8 +20,8 @@ def list.unfold' {α : Type u₁} : list.{u₁ u₂ u₃} α → list'.{u₁ (ma
 
 set_option pp.all true
 set_option pp.full_names false
-#check @list.fold      
-#check @list.unfold  
+#check @list.fold
+#check @list.unfold
 #check @list.unfold'
 #print list.unfold
 

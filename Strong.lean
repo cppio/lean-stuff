@@ -39,8 +39,8 @@ variable {α : Sort u} (r : α → α → Prop)
 def wellFounded := ∀ P : α → Prop, (∀ x, (∀ y, r y x → P y) → P x) → ∀ x, P x
 
 def Nat.lt_wellFounded : wellFounded Nat.lt := by
-  intro P h 
-  --suffices ∀ 
+  intro P h
+  --suffices ∀
   -/
 
 --#reduce @WellFounded.fix Nat (λ _ => Nat) Nat.lt Nat.lt_wfRel.wf (λ | 0, _ => 0 | 1, _ => 1 | n + 2, fib => fib (n + 1) .refl + fib n (.step .refl))

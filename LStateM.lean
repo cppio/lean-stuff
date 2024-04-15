@@ -1,7 +1,7 @@
 import Common.Meta
 
 opaque {
-  def NatM : Type → Type := StateM Nat 
+  def NatM : Type → Type := StateM Nat
   def NatM.run : NatM α → Nat → α × Nat := StateT.run
   unsafe def NatM.modifyGet : (Nat → α × Nat) → NatM α := StateT.modifyGet
   instance : Monad NatM

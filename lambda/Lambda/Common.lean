@@ -41,7 +41,7 @@ private def impl.withSucc {motive : ∀ n, Fin2 n → Sort _} (f : ∀ {n} i, mo
 
 @[implemented_by impl.withSucc]
 protected def withSucc {motive : ∀ n, Fin2 n → Sort _} (f : ∀ {n} i, motive (.succ n) i) : ∀ {n} i, motive n i :=
-  @Fin2.rec motive (f zero) λ i _ => f i.succ 
+  @Fin2.rec motive (f zero) λ i _ => f i.succ
 
 private theorem withSucc.impl : ∀ {i}, @Fin2.withSucc _ @f n i = impl.withSucc @f i
   | zero => rfl

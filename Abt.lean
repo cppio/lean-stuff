@@ -870,7 +870,7 @@ open DList
 
 def Exp.in : View → Exp
   | .var x => .var ⟨_, _, .let, [.Exp], by simp⟩ x
-  | .num n => .op (.num n) ⟦⟧ 
+  | .num n => .op (.num n) ⟦⟧
   | .plus a b => .op .plus ⟦a, b⟧
   | .times a b => .op .times ⟦a, b⟧
   | .let a x b => .op' .let ⟦(⟦⟧, a), (⟦x⟧, b)⟧
@@ -878,7 +878,7 @@ def Exp.in : View → Exp
 def Exp.out (e : Exp) : View :=
   match WfAbt.out e with
   | .var _ x => .var x
-  | .op (.num n) ⟦⟧ => .num n 
+  | .op (.num n) ⟦⟧ => .num n
   | .op .plus ⟦(⟦⟧, a), (⟦⟧, b)⟧ => .plus a b
   | .op .times ⟦(⟦⟧, a), (⟦⟧, b)⟧ => .times a b
   | .op .let ⟦(⟦⟧, a), (⟦x⟧, b)⟧ => .let a x b

@@ -227,7 +227,7 @@ def mkParaInstance (val : InductiveVal) : CommandElabM Unit := do
     return type
 
   let type := mkType (mkArr α <| mkArr β <| .sort .zero) .default
-  
+
   let ctors ← val.ctors.mapM fun ctor => do
     let ctor ← getConstInfo ctor
     Lean.logInfo m!"{ctor.name}.{ctor.levelParams} : {ctor.type}"

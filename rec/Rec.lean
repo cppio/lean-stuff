@@ -112,7 +112,7 @@ def compileRec (rv : RecursorVal) : TermElabM Unit := do
   }]
   Compiler.CSimp.add name .global
 
-open Lean Meta Elab Command in 
+open Lean Meta Elab Command in
 elab "#compile " i:ident : command => liftTermElabM <| withRef i do
   let i := i.getId
   _ ← getConstInfoInduct i
@@ -240,7 +240,7 @@ def compileMutualRecs (name : Name) : TermElabM Unit := do
     }]
     Compiler.CSimp.add name .global
 
-open Lean Meta Elab Command in 
+open Lean Meta Elab Command in
 elab "#compile mutual " i:ident : command => liftTermElabM <| withRef i do
   let i := i.getId
   _ ← getConstInfoInduct i

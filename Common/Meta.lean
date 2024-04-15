@@ -24,7 +24,7 @@ where
     | ord => ord
 
 elab tk:"#print prefix " i:ident : command => do
-  let i ← resolveGlobalConstNoOverload i
+  let i := i.getId
   let cs := (← getEnv).constants.fold (fun cs name info =>
     if i.isPrefixOf name || i.isPrefixOf (privateToUserName? name |>.getD .anonymous) then cs.push info else cs) #[]
   let cs := cs.qsort (nameCmp ·.name ·.name == .lt)
@@ -39,6 +39,35 @@ private def modifyLocalDecl [Monad m] (lctx : LocalContext) (e : Expr) (f : Loca
       let decl ← f decl
       return { fvarIdToDecl := map.insert decl.fvarId decl
                decls        := decls.set decl.index decl }
+
+def Lean.Level.names : Level → List Name
+  | zero => []
+  | succ u => u.names
+  | max u v => u.names ++ v.names
+  | imax u v => u.names ++ v.names
+  | param name => [name]
+  | mvar mvarId => [mvarId.name]
+
+def Lean.Expr.names : Expr → List Name
+  | bvar _ => []
+  | fvar fvarId => [fvarId.name]
+  | mvar mvarId => [mvarId.name]
+  | sort u => u.names
+  | const declName us => declName :: us.bind Level.names
+  | app fn arg => fn.names ++ arg.names
+  | lam binderName binderType body _ => binderName :: binderType.names ++ body.names
+  | forallE binderName binderType body _ => binderName :: binderType.names ++ body.names
+  | letE declName type value body _ => declName :: type.names ++ value.names ++ body.names
+  | lit _ => []
+  | mdata _ expr => expr.names
+  | proj typeName _ struct => typeName :: struct.names
+
+elab tk:"#check_hyg " id:ident : command => do
+  let c ← Lean.resolveGlobalConstNoOverload id
+  let decl ← Lean.getConstInfo c
+  let names := decl.type.names.filter Lean.Name.hasNum
+  if !names.isEmpty then
+    Lean.logErrorAt tk m!"found {names} in {decl.type}"
 
 open Meta
 
@@ -100,7 +129,7 @@ elab tk:"#print instances " t:term : command => Command.runTermElabM fun _ => do
   let t ← `($t ..)
   let e ← Term.elabType t
   let insts ← SynthInstance.getInstances e
-  logInfoAt tk <| ← joinMapM insts λ inst => return inst ++ " : " ++ (← inferType inst)
+  logInfoAt tk <| ← joinMapM insts λ inst => return inst.val ++ " : " ++ (← inferType inst.val)
 
 elab tk:"#time " c:command : command => do
   let start ← IO.monoMsNow
@@ -108,6 +137,14 @@ elab tk:"#time " c:command : command => do
   logInfoAt tk m!"time: {(← IO.monoMsNow) - start} ms"
 
 open Parser
+
+macro:max lhs:ident ".0" "." rhs:ident : term => return mkIdent (lhs.getId.num 0 |>.appendCore rhs.getId)
+
+macro:max lhs:name ".0" "." rhs:ident : term => `($(Syntax.mkNameLit s!"`{lhs.getName}.0.{rhs.getId}"):name)
+
+macro:max lhs:Term.doubleQuotedName ".0" "." rhs:ident : term =>
+  let lhs : Ident := ⟨lhs.raw[2]⟩
+  `(``$(mkIdent (lhs.getId.num 0 |>.appendCore rhs.getId)))
 
 syntax "opaque {" (ppLine (Command.unsafe)? ("def " <|> "instance ") (ident)? bracketedBinder* " : " term (" := " term)?)* ppLine "}" : command
 
@@ -142,7 +179,27 @@ macro_rules
 
 syntax (name := rawDef) "#def " ident (".{" ident,+ "}")? " : " term " := " term : command
 
-open Term Command
+elab "#del" table:("leadingParser" <|> "trailingParser") cat:ident tk:ident idx:num : command => do
+  let env ← getEnv
+  let state := parserExtension.getState env
+  let .some category := state.categories.find? cat.getId
+    | throwErrorAt cat "unknown category"
+  let .some parsers :=
+      match table.raw.getKind with
+      | `token.leadingParser => category.tables.leadingTable.find? tk.getId
+      | _ => category.tables.trailingTable.find? tk.getId
+    | throwErrorAt tk "unknown token"
+  if idx.getNat >= parsers.length then
+    throwErrorAt idx "invalid index"
+  let parsers := parsers.eraseIdx idx.getNat
+  let category :=
+    match table.raw.getKind with
+    | `token.leadingParser => { category with tables.leadingTable := RBMap.insert category.tables.leadingTable tk.getId parsers }
+    | _ => { category with tables.trailingTable := RBMap.insert category.tables.trailingTable tk.getId parsers }
+  let state := { state with categories := state.categories.insert cat.getId category }
+  setEnv <| parserExtension.modifyState env fun _ => state
+
+open Elab.Term Command
 
 @[command_elab rawDef]
 unsafe def rawDefElab : CommandElab
@@ -163,3 +220,17 @@ unsafe def rawDefElab : CommandElab
       safety := .safe
     }
   | _ => throwUnsupportedSyntax
+
+elab "#print nontriv eqns " id:ident : command => liftTermElabM do
+  let n ← resolveGlobalConstNoOverload id
+  let some eqns ← getEqnsFor? n
+    | return
+  for eqn in eqns do
+    if !(← isRflTheorem eqn) then
+      logInfo (privateToUserName? eqn |>.getD eqn)
+
+syntax (name := annotate) "annotate% " name term : term
+@[term_elab annotate]
+def elabAnnotate : TermElab
+  | `(annotate% $name $t), expectedType? => return mkAnnotation name.getName <| ← elabTerm t expectedType?
+  | _, _ => throwUnsupportedSyntax
