@@ -7,6 +7,8 @@ def CoNat.ofNat (n : Nat) : CoNat :=
 def CoNat.inf : CoNat :=
   ⟨λ _ => true, λ _ => rfl⟩
 
+-- Based on "Infinite sets that satisfy the principle of omniscience in any variety of constructive mathematics" by Martín Escardó
+
 theorem lemma32 {x : CoNat} (h : x.val n = false) : ∃ k, k ≤ n ∧ x = .ofNat k :=
   lemma32 n.zero_le λ _ hj => nomatch hj
 where

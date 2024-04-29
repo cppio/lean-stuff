@@ -1,143 +1,6 @@
-inductive Typ
-  | void
-  | unit
-  | sum  (A₁ A₂ : Typ)
-  | prod (A₁ A₂ : Typ)
-  | arr  (A₁ A₂ : Typ)
+import STLC.Basic
 
-inductive Ctx
-  | nil
-  | cons (Γ : Ctx) (A : Typ)
-
-inductive Var (A : Typ) : (Γ : Ctx) → Type
-  | zero               : Var A (.cons Γ A)
-  | succ (x : Var A Γ) : Var A (.cons Γ A')
-
-inductive Exp : (Γ : Ctx) → (A : Typ) → Type
-  | var   (x : Var A Γ)                                                              : Exp Γ A
-  | abort (M : Exp Γ .void)                                                          : Exp Γ A
-  | triv                                                                             : Exp Γ .unit
-  | inl   (M : Exp Γ A₁)                                                             : Exp Γ (.sum A₁ A₂)
-  | inr   (M : Exp Γ A₂)                                                             : Exp Γ (.sum A₁ A₂)
-  | case  (M : Exp Γ (.sum A₁ A₂)) (M₁ : Exp (Γ.cons A₁) A) (M₂ : Exp (Γ.cons A₂) A) : Exp Γ A
-  | pair  (M₁ : Exp Γ A₁) (M₂ : Exp Γ A₂)                                            : Exp Γ (.prod A₁ A₂)
-  | prl   (M : Exp Γ (.prod A₁ A₂))                                                  : Exp Γ A₁
-  | prr   (M : Exp Γ (.prod A₁ A₂))                                                  : Exp Γ A₂
-  | lam   (M : Exp (Γ.cons A₁) A₂)                                                   : Exp Γ (.arr A₁ A₂)
-  | ap    (M : Exp Γ (.arr A₁ A₂)) (M₁ : Exp Γ A₁)                                   : Exp Γ A₂
-
-def Renaming (Γ Γ' : Ctx) : Type :=
-  ∀ {{A}}, (x : Var A Γ') → Var A Γ
-
-namespace Renaming
-
-@[simp]
-def weaken (γ : Renaming Γ Γ') : Renaming (Γ.cons A) (Γ'.cons A)
-  | _, .zero   => .zero
-  | _, .succ x => .succ (γ x)
-
-@[simp]
-def apply (γ : Renaming Γ Γ') : (M : Exp Γ' A) → Exp Γ A
-  | .var x        => .var (γ x)
-  | .abort M      => .abort (γ.apply M)
-  | .triv         => .triv
-  | .inl M        => .inl (γ.apply M)
-  | .inr M        => .inr (γ.apply M)
-  | .case M M₁ M₂ => .case (γ.apply M) (γ.weaken.apply M₁) (γ.weaken.apply M₂)
-  | .pair M₁ M₂   => .pair (γ.apply M₁) (γ.apply M₂)
-  | .prl M        => .prl (γ.apply M)
-  | .prr M        => .prr (γ.apply M)
-  | .lam M        => .lam (γ.weaken.apply M)
-  | .ap M M₁      => .ap (γ.apply M) (γ.apply M₁)
-
-end Renaming
-
-@[simp]
-def Exp.weaken : (M : Exp Γ A) → Exp (Γ.cons A') A :=
-  Renaming.apply fun _ => .succ
-
-def Subst (Γ Γ' : Ctx) : Type :=
-  ∀ {{A}}, (x : Var A Γ') → Exp Γ A
-
-namespace Subst
-
-@[simp]
-def weaken (γ : Subst Γ Γ') : Subst (Γ.cons A) (Γ'.cons A)
-  | _, .zero   => .var .zero
-  | _, .succ x => .weaken (γ x)
-
-@[simp]
-def apply (γ : Subst Γ Γ') : (M : Exp Γ' A) → Exp Γ A
-  | .var x        => γ x
-  | .abort M      => .abort (γ.apply M)
-  | .triv         => .triv
-  | .inl M        => .inl (γ.apply M)
-  | .inr M        => .inr (γ.apply M)
-  | .case M M₁ M₂ => .case (γ.apply M) (γ.weaken.apply M₁) (γ.weaken.apply M₂)
-  | .pair M₁ M₂   => .pair (γ.apply M₁) (γ.apply M₂)
-  | .prl M        => .prl (γ.apply M)
-  | .prr M        => .prr (γ.apply M)
-  | .lam M        => .lam (γ.weaken.apply M)
-  | .ap M M₁      => .ap (γ.apply M) (γ.apply M₁)
-
-@[simp]
-def cons (γ : Subst Γ Γ') (M : Exp Γ A) : Subst Γ (Γ'.cons A)
-  | _, .zero   => M
-  | _, .succ x => γ x
-
-end Subst
-
-@[simp]
-def Exp.subst (M : Exp (Γ.cons A') A) (M' : Exp Γ A') : Exp Γ A :=
-  Subst.cons (fun _ => .var) M' |>.apply M
-
-@[simp]
-def Exp.subst₁₁ (M : Exp (.cons Γ A') A) (M' : Exp (Γ.cons A₁) A') : Exp (Γ.cons A₁) A :=
-  Subst.cons (fun _ x => .var x.succ) M' |>.apply M
-
-section
-
-local macro "lemma" M:ident Γ:ident Γ':ident : tactic =>
-  `(tactic| (
-    induction $M generalizing $Γ $Γ'
-      <;> simp [*]
-      <;> (try constructor)
-      <;> congr
-      <;> funext _ x
-      <;> cases x
-      <;> simp
-  ))
-
-@[simp]
-theorem Renaming.rename_rename (γ : Renaming Γ Γ') (γ' : Renaming Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ (γ' x)) M :=
-  by lemma M Γ Γ'
-
-@[simp]
-theorem Subst.subst_rename (γ : Subst Γ Γ') (γ' : Renaming Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ (γ' x)) M :=
-  by lemma M Γ Γ'
-
-@[simp]
-theorem Subst.rename_subst (γ : Renaming Γ Γ') (γ' : Subst Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ.apply (γ' x)) M :=
-  by lemma M Γ Γ'
-
-@[simp]
-theorem Subst.subst_subst (γ : Subst Γ Γ') (γ' : Subst Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ.apply (γ' x)) M :=
-  by lemma M Γ Γ'
-
-end
-
-@[simp]
-theorem Subst.weaken_var : weaken (Γ := Γ) (A := A) (fun _ => .var) = fun _ => .var := by
-  funext _ x
-  cases x
-    <;> simp
-
-@[simp]
-theorem Subst.apply_var : apply (fun _ => .var) M = M := by
-  induction M
-    <;> simp [*]
-
-macro "lemma" : tactic => `(tactic| simp <;> congr <;> funext _ x <;> cases x <;> simp)
+namespace STLC.Evaluation
 
 inductive Steps : (M M' : Exp .nil A) → Type
   | abort (s : Steps M M') : Steps (.abort M)      (.abort M')
@@ -169,6 +32,36 @@ inductive Val : (M : Exp .nil A) → Type
   | pair : Val (.pair M₁ M₂)
   | lam  : Val (.lam M)
 
+theorem Val.not_steps : Val M → Steps M M' → False :=
+  nofun
+
+def progress : (M : Exp .nil A) → Val M ⊕ Σ M', Steps M M'
+  | .abort M      => .inr <|
+                     match progress M with
+                     | .inr ⟨_, s⟩ => ⟨_, .abort s⟩
+  | .triv         => .inl .triv
+  | .inl M        => .inl .inl
+  | .inr M        => .inl .inr
+  | .case M M₁ M₂ => .inr <|
+                     match progress M with
+                     | .inl .inl => ⟨_, .case_inl⟩
+                     | .inl .inr => ⟨_, .case_inr⟩
+                     | .inr ⟨_, s⟩ => ⟨_, .case s⟩
+  | .pair M₁ M₂   => .inl .pair
+  | .prl M        => .inr <|
+                     match progress M with
+                     | .inl .pair => ⟨_, .prl_pair⟩
+                     | .inr ⟨_, s⟩ => ⟨_, .prl s⟩
+  | .prr M        => .inr <|
+                     match progress M with
+                     | .inl .pair => ⟨_, .prr_pair⟩
+                     | .inr ⟨_, s⟩ => ⟨_, .prr s⟩
+  | .lam M        => .inl .lam
+  | .ap M M₁      => .inr <|
+                     match progress M with
+                     | .inl .lam => ⟨_, .ap_lam⟩
+                     | .inr ⟨_, s⟩ => ⟨_, .ap s⟩
+
 inductive Reduces : (M M' : Exp .nil A) → Type
   | refl                                       : Reduces M M
   | step (s : Steps M M') (r : Reduces M' M'') : Reduces M M''
@@ -179,7 +72,7 @@ def trans : (r : Reduces M M') → (r' : Reduces M' M'') → Reduces M M''
   | refl,     r' => r'
   | step s r, r' => step s (r.trans r')
 
-def lift {F : (M : Exp .nil A) → Exp .nil B} (f : ∀ {M M'}, (s : Steps M M') → Steps (F M) (F M')) : (r : Reduces M M') → Reduces (F M) (F M')
+def lift {F : (M : Exp .nil A) → Exp .nil A'} (f : ∀ {M M'}, (s : Steps M M') → Steps (F M) (F M')) : (r : Reduces M M') → Reduces (F M) (F M')
   | refl     => refl
   | step s r => step (f s) (r.lift f)
 
@@ -200,15 +93,17 @@ theorem deterministic (r₁ : Reduces M M₁) (r₂ : Reduces M M₂) (v₁ : Va
   | refl =>
     cases r₂ with
     | refl => rfl
-    | step s₂ r₂ => nomatch (v₁, s₂)
+    | step s₂ r₂ => nomatch v₁.not_steps s₂
   | step s₁ _ ih =>
     cases r₂ with
-    | refl => nomatch (v₂, s₁)
+    | refl => nomatch v₂.not_steps s₁
     | step s₂ r₂ =>
       cases s₁.deterministic s₂
       exact ih r₂ v₁
 
 end Reduces
+
+namespace Termination
 
 def HT : ∀ A, (M : Exp .nil A) → Type
   | .void,       _ => Empty
@@ -222,7 +117,7 @@ def HT.expand : ∀ {A M₁ M₂}, (r₁ : Reduces M₁ M₂) → (ht₂ : HT A 
   | .sum  _ _, _, _, r₁, .inl ⟨_, ht₁, r₂⟩    => .inl ⟨_, ht₁, r₁.trans r₂⟩
   | .sum  _ _, _, _, r₁, .inr ⟨_, ht₂, r₂⟩    => .inr ⟨_, ht₂, r₁.trans r₂⟩
   | .prod _ _, _, _, r₁, ⟨_, ht₁, _, ht₂, r₂⟩ => ⟨_, ht₁, _, ht₂, r₁.trans r₂⟩
-  | .arr  _ _, _, _, r₁, ⟨_, ht₂, r₂⟩         => ⟨_, ht₂, r₁.trans r₂⟩
+  | .arr  _ _, _, _, r₁, ⟨_, ht, r₂⟩          => ⟨_, ht, r₁.trans r₂⟩
 
 def HTSubst (γ : Subst .nil Γ) : Type :=
   ∀ {A} x, HT A (γ x)
@@ -252,6 +147,18 @@ def ftlr : ∀ M, HT' Γ A M
   | .ap M M₁,      γ, ht_γ => match ftlr M ht_γ with
                               | ⟨_, ht₂, r⟩ => .expand (.trans (.ap r) .ap_lam) <| ht₂ (ftlr M₁ ht_γ)
 
+def termination (M : Exp .nil A) : Σ M', Val M' × Reduces M M' :=
+  match A, M, Subst.apply_var.ndrec <| ftlr M nofun with
+  | .unit,     _, r               => ⟨_, .triv, r⟩
+  | .sum  _ _, _, .inl ⟨_, _, r⟩  => ⟨_, .inl, r⟩
+  | .sum  _ _, _, .inr ⟨_, _, r⟩  => ⟨_, .inr, r⟩
+  | .prod _ _, _, ⟨_, _, _, _, r⟩ => ⟨_, .pair, r⟩
+  | .arr  _ _, _, ⟨_, _, r⟩       => ⟨_, .lam, r⟩
+
+end Termination
+
+namespace Equality
+
 def ExactEq : ∀ A, (M M' : Exp .nil A) → Type
   | .void,       _, _  => Empty
   | .unit,       M, M' => Reduces M .triv × Reduces M' .triv
@@ -266,14 +173,14 @@ def expand : ∀ {A M₁ M₁' M₂ M₂'}, (r₁ : Reduces M₁ M₂) → (r₁
   | .sum  _ _, _, _, _, _, r₁, r₁', .inl ⟨_, _, eq₁, r₂, r₂'⟩       => .inl ⟨_, _, eq₁, r₁.trans r₂, r₁'.trans r₂'⟩
   | .sum  _ _, _, _, _, _, r₁, r₁', .inr ⟨_, _, eq₂, r₂, r₂'⟩       => .inr ⟨_, _, eq₂, r₁.trans r₂, r₁'.trans r₂'⟩
   | .prod _ _, _, _, _, _, r₁, r₁', ⟨_, _, eq₁, _, _, eq₂, r₂, r₂'⟩ => ⟨_, _, eq₁, _, _, eq₂, r₁.trans r₂, r₁'.trans r₂'⟩
-  | .arr  _ _, _, _, _, _, r₁, r₁', ⟨_, _, eq₂, r₂, r₂'⟩            => ⟨_, _, eq₂, r₁.trans r₂, r₁'.trans r₂'⟩
+  | .arr  _ _, _, _, _, _, r₁, r₁', ⟨_, _, eq, r₂, r₂'⟩             => ⟨_, _, eq, r₁.trans r₂, r₁'.trans r₂'⟩
 
 def symm : ∀ {A M M'}, (eq : ExactEq A M M') → ExactEq A M' M
   | .unit,     _, _, (r, r')                       => (r', r)
   | .sum  _ _, _, _, .inl ⟨_, _, eq₁, r, r'⟩       => .inl ⟨_, _, eq₁.symm, r', r⟩
   | .sum  _ _, _, _, .inr ⟨_, _, eq₂, r, r'⟩       => .inr ⟨_, _, eq₂.symm, r', r⟩
   | .prod _ _, _, _, ⟨_, _, eq₁, _, _, eq₂, r, r'⟩ => ⟨_, _, eq₁.symm, _, _, eq₂.symm, r', r⟩
-  | .arr  _ _, _, _, ⟨_, _, eq₂, r, r'⟩            => ⟨_, _, fun eq₁ => eq₂ eq₁.symm |>.symm, r', r⟩
+  | .arr  _ _, _, _, ⟨_, _, eq, r, r'⟩             => ⟨_, _, fun eq₁ => eq eq₁.symm |>.symm, r', r⟩
 
 def trans : ∀ {A M M' M''}, (eq : ExactEq A M M') → (eq' : ExactEq A M' M'') → ExactEq A M M''
   | .unit,     _, _, _, (r, _),                         (_, r') => (r, r')
@@ -285,8 +192,8 @@ def trans : ∀ {A M M' M''}, (eq : ExactEq A M M') → (eq' : ExactEq A M' M'')
   | .sum  _ _, _, _, _, .inr ⟨_, _, _, _, r⟩,           .inl ⟨_, _, _, r', _⟩ => nomatch r.deterministic r' .inr .inl
   | .prod _ _, _, _, _, ⟨_, _, eq₁, _, _, eq₂, r, r''⟩, ⟨_, _, eq₁', _, _, eq₂', r''', r'⟩ => match r''.deterministic r''' .pair .pair with
                                                                                               | rfl => ⟨_, _, eq₁.trans eq₁', _, _, eq₂.trans eq₂', r, r'⟩
-  | .arr  _ _, _, _, _, ⟨_, _, eq₂, r, r''⟩,            ⟨_, _, eq₂', r''', r'⟩ => match r''.deterministic r''' .lam .lam with
-                                                                                  | rfl => ⟨_, _, fun eq₁ => eq₂ (eq₁.trans eq₁.symm) |>.trans <| eq₂' eq₁, r, r'⟩
+  | .arr  _ _, _, _, _, ⟨_, _, eq, r, r''⟩,             ⟨_, _, eq', r''', r'⟩  => match r''.deterministic r''' .lam .lam with
+                                                                                  | rfl => ⟨_, _, fun eq₁ => eq (eq₁.trans eq₁.symm) |>.trans <| eq' eq₁, r, r'⟩
 
 end ExactEq
 
@@ -384,7 +291,7 @@ inductive DefEq : ∀ Γ A, (M M' : Exp Γ A) → Type
 
   | void_η M M' : DefEq Γ A             (.subst M' M) (.abort M)
   | unit_η M    : DefEq Γ .unit         M             .triv
-  | sum_η  M M' : DefEq Γ A             (.subst M' M) (.case M (M'.subst₁₁ (.inl (.var .zero))) (M'.subst₁₁ (.inr (.var .zero))))
+  | sum_η  M M' : DefEq Γ A             (.subst M' M) (.case M (M'.subst₁ (.inl (.var .zero))) (M'.subst₁ (.inr (.var .zero))))
   | prod_η M    : DefEq Γ (.prod A₁ A₂) M             (.pair (.prl M) (.prr M))
   | arr_η  M    : DefEq Γ (.arr  A₁ A₂) M             (.lam (.ap M.weaken (.var .zero)))
 
@@ -404,21 +311,21 @@ def DefEq.congruence : Congruence DefEq where
   lam   := lam
   ap    := ap
 
-def ftlr₂ : (eq : DefEq Γ A M M') → ExactEq' Γ A M M'
-  | .symm eq      => ExactEq'.congruence.symm (ftlr₂ eq)
-  | .trans eq eq' => ExactEq'.congruence.trans (ftlr₂ eq) (ftlr₂ eq')
+def ftlr : (eq : DefEq Γ A M M') → ExactEq' Γ A M M'
+  | .symm eq      => ExactEq'.congruence.symm (ftlr eq)
+  | .trans eq eq' => ExactEq'.congruence.trans (ftlr eq) (ftlr eq')
 
   | .var x           => ExactEq'.congruence.var x
-  | .abort eq        => ExactEq'.congruence.abort (ftlr₂ eq)
+  | .abort eq        => ExactEq'.congruence.abort (ftlr eq)
   | .triv            => ExactEq'.congruence.triv
-  | .inl eq          => ExactEq'.congruence.inl (ftlr₂ eq)
-  | .inr eq          => ExactEq'.congruence.inr (ftlr₂ eq)
-  | .case eq eq₁ eq₂ => ExactEq'.congruence.case (ftlr₂ eq) (ftlr₂ eq₁) (ftlr₂ eq₂)
-  | .pair eq₁ eq₂    => ExactEq'.congruence.pair (ftlr₂ eq₁) (ftlr₂ eq₂)
-  | .prl eq          => ExactEq'.congruence.prl (ftlr₂ eq)
-  | .prr eq          => ExactEq'.congruence.prr (ftlr₂ eq)
-  | .lam eq          => ExactEq'.congruence.lam (ftlr₂ eq)
-  | .ap eq eq₁       => ExactEq'.congruence.ap (ftlr₂ eq) (ftlr₂ eq₁)
+  | .inl eq          => ExactEq'.congruence.inl (ftlr eq)
+  | .inr eq          => ExactEq'.congruence.inr (ftlr eq)
+  | .case eq eq₁ eq₂ => ExactEq'.congruence.case (ftlr eq) (ftlr eq₁) (ftlr eq₂)
+  | .pair eq₁ eq₂    => ExactEq'.congruence.pair (ftlr eq₁) (ftlr eq₂)
+  | .prl eq          => ExactEq'.congruence.prl (ftlr eq)
+  | .prr eq          => ExactEq'.congruence.prr (ftlr eq)
+  | .lam eq          => ExactEq'.congruence.lam (ftlr eq)
+  | .ap eq eq₁       => ExactEq'.congruence.ap (ftlr eq) (ftlr eq₁)
 
   | .case_inl M M₁ M₂ => fun eq_γ => .expand .case_inl .refl <| cast (by lemma) <| ExactEq'.congruence.refl (M₁.subst M) eq_γ
   | .case_inr M M₁ M₂ => fun eq_γ => .expand .case_inr .refl <| cast (by lemma) <| ExactEq'.congruence.refl (M₂.subst M) eq_γ
@@ -437,64 +344,6 @@ def ftlr₂ : (eq : DefEq Γ A M M') → ExactEq' Γ A M M'
   | .arr_η M     => fun eq_γ => match ExactEq'.congruence.refl M eq_γ with
                                 | ⟨_, _, eq₂, r, r'⟩ => ⟨_, _, fun eq₁ => cast (by lemma) <| ExactEq.expand .refl (.trans (.ap r') .ap_lam) <| eq₂ eq₁, r, .refl⟩
 
---def completeness : ExactEq' Γ A M M' → DefEq Γ A M M' := sorry
+-- TODO: CCC = observational = definitional = exact
 
-/-
-def interpret : Typ → Typ
-  | .void => .void
-  | .unit => .unit
--/
-
-/-
-def decide : ∀ A, Exp Γ A → Exp (.cons Γ A) (.sum .unit .unit)
-  | .void,       M => .abort (.var .zero)
-  | .unit,       M => .inl .triv
-  | .sum  A₁ A₂, M => .case (.var .zero) (have := @decide sorry A₁ sorry; sorry) sorry
-  | .prod A₁ A₂, M => sorry
-  | .arr  A₁ A₂, M => sorry
--/
-
-/-
-def enumerate : ∀ A, List (Exp .nil A)
-  | .void       => []
-  | .unit       => [.triv]
-  | .sum  A₁ A₂ => (enumerate A₁).map .inl ++ (enumerate A₂).map .inr
-  | .prod A₁ A₂ => enumerate A₁ |>.bind fun M₁ => enumerate A₂ |>.map fun M₂ => .pair M₁ M₂
-  | .arr  A₁ A₂ => panic! "not implemented"
--/
-
-/-
-def ExactEq'' Γ A (M M' : Exp Γ A) : Type :=
-  {γ : Subst _ Γ} → ExactEq A (γ.subst M) (γ.subst M')
-
-def to'' (eq : ExactEq' Γ A M M') : ExactEq'' Γ A M M'
-  | γ => eq fun x => subst (fun M => ExactEq _ M M) Subst.subst_var <| ExactEq'.congruence.refl (γ x) nofun
-
-def completeness'' : ExactEq'' Γ A M M' → DefEq Γ A M M' := sorry
-
-def eq_of_steps : (s : Steps (A := A) M₁ M₂) → DefEq .nil A M₁ M₂
-  | .abort s => .abort _ _ (eq_of_steps s)
-  | .case  s => .case _ _ _ _ _ _ (eq_of_steps s) (DefEq.congruence.refl _) (DefEq.congruence.refl _)
-  | .prl   s => .prl _ _ (eq_of_steps s)
-  | .prr   s => .prr _ _ (eq_of_steps s)
-  | .ap    s => .ap _ _ _ _ (eq_of_steps s) (DefEq.congruence.refl _)
-
-  | .case_inl => .case_inl
-  | .case_inr => .case_inr
-  | .prl_pair => .prl_pair
-  | .prr_pair => .prr_pair
-  | .ap_lam   => .ap_lam
-
-def eq_of_reduces : (r : Reduces (A := A) M₁ M₂) → DefEq .nil A M₁ M₂
-  | .refl     => DefEq.congruence.refl _
-  | .step s r => .trans (eq_of_steps s) (eq_of_reduces r)
-
-def completeness' : ∀ {A M M'}, ExactEq A M M' → DefEq .nil A M M'
-  | .unit,     _, _, (r, r')                       => eq_of_reduces r |>.trans <| eq_of_reduces r' |>.symm
-  | .sum  _ _, _, _, .inl ⟨_, _, eq₁, r, r'⟩       => eq_of_reduces r |>.trans (.inl _ _ (completeness' eq₁)) |>.trans <| eq_of_reduces r' |>.symm
-  | .sum  _ _, _, _, .inr ⟨_, _, eq₂, r, r'⟩       => eq_of_reduces r |>.trans (.inr _ _ (completeness' eq₂)) |>.trans <| eq_of_reduces r' |>.symm
-  | .prod _ _, _, _, ⟨_, _, eq₁, _, _, eq₂, r, r'⟩ => eq_of_reduces r |>.trans (.pair _ _ _ _ (completeness' eq₁) (completeness' eq₂)) |>.trans <| eq_of_reduces r' |>.symm
-  | .arr  _ _, _, _, ⟨_, _, eq₂, r, r'⟩            => have := fun {M₂} => @eq₂ M₂ M₂ (subst (fun M => ExactEq _ M M) Subst.subst_var <| ExactEq'.congruence.refl M₂ nofun); sorry
--/
-
--- TODO: observational equality
+end Equality

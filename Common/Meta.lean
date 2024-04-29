@@ -23,7 +23,7 @@ where
     | .eq => cmp l₁ l₂
     | ord => ord
 
-elab tk:"#print prefix " i:ident : command => do
+elab tk:"#print " "prefix " i:ident : command => do
   let i := i.getId
   let cs := (← getEnv).constants.fold (fun cs name info =>
     if i.isPrefixOf name || i.isPrefixOf (privateToUserName? name |>.getD .anonymous) then cs.push info else cs) #[]
@@ -63,11 +63,10 @@ def Lean.Expr.names : Expr → List Name
   | proj typeName _ struct => typeName :: struct.names
 
 elab tk:"#check_hyg " id:ident : command => do
-  let c ← Lean.resolveGlobalConstNoOverload id
-  let decl ← Lean.getConstInfo c
-  let names := decl.type.names.filter Lean.Name.hasNum
+  let info ← getConstInfo <| ← resolveGlobalConstNoOverload id
+  let names := info.type.names.filter Name.hasNum
   if !names.isEmpty then
-    Lean.logErrorAt tk m!"found {names} in {decl.type}"
+    logErrorAt tk m!"found {names} in {info.type}"
 
 open Meta
 
