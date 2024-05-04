@@ -154,8 +154,8 @@ macro_rules
       let val := val?.getD inferInstance
       if safety.isSome then ``(λ _ ↦ $val) else return val
 
-    let inst ← Macro.addMacroScope "inst"
-    let fields := names.mapIdx λ idx name? => mkIdent <| toString <| match name? with | some name => name.getId | none => inst.num idx
+    let inst ← Macro.addMacroScope `inst
+    let fields := names.mapIdx λ idx name? => mkIdent <| .mkSimple <| toString <| match name? with | some name => name.getId | none => inst.num idx
 
     let nameFields : NameMap _ := .fromArray (cmp := _) <| (names.zip fields).filterMap λ | (some name, field) => some (name.getId, field.raw) | _ => none
     let fieldTys ← (unsafes.zip tys).mapM λ (safety, ty) =>

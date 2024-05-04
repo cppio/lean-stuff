@@ -1,5 +1,13 @@
 import Common.Meta
-import Mathlib.Util.CompileInductive
+
+partial def rename (names : Lean.HashMap Lean.Name Lean.Ident) : Lean.Syntax → Lean.Syntax
+  | .node info kind args => .node info kind <| args.map <| rename names
+  | stx@(.ident _ _ name _) =>
+    if let some id := names.find? name then
+      id
+    else
+      stx
+  | stx => stx
 
 partial def replaceRecCalls (fns : Lean.HashMap Lean.Name (Lean.HashMap Lean.Name Lean.Ident)) : Lean.Macro
   | .node info kind args => do
@@ -19,6 +27,8 @@ partial def replaceRecCalls (fns : Lean.HashMap Lean.Name (Lean.HashMap Lean.Nam
 def notEnd := Lean.Parser.notSymbol "end"
 syntax "mutual" "rec" (notEnd command)+ "end" : command
 
+initialize Lean.Meta.registerGetUnfoldEqnFn fun declName => Lean.Elab.Eqns.getUnfoldFor? declName fun _ => none
+
 abbrev matchAlt := Lean.Parser.Term.matchAlt
 
 def parseArm : Lean.TSyntax ``Lean.Parser.Term.matchAlt → Lean.MacroM (Lean.Ident × Array Lean.Ident × Lean.Term)
@@ -28,11 +38,11 @@ def parseArm : Lean.TSyntax ``Lean.Parser.Term.matchAlt → Lean.MacroM (Lean.Id
 
 def processRecArgs (fnP fnN : Lean.Ident) : (Lean.Ident × Array Lean.Ident × Lean.Term) × Array (Option Lean.Ident) → Lean.MacroM Lean.Term
   | ((_, args, rhs), fns) => do
-  let args_fns := args.zip fns
-  let fnArgs := args_fns.filterMap fun (arg, fn) => fn.map fun fn => Lean.mkIdent <| toString <| fn.getId ++ arg.getId
+  let args_fns := args.zipWith fns fun arg fn => (arg, fn.map fun fn => (fn, Lean.mkIdent <| toString <| fn.getId ++ arg.getId))
+  let fnArgs := args_fns.filterMap (·.2.map (·.2))
   `(fun $args* $fnArgs:ident* => $(⟨← replaceRecCalls (.ofList [
-    (fnP.getId, .ofList <| Array.toList <| args_fns.filterMap fun (arg, fn) => if fn == fnP then (arg.getId, Lean.mkIdent <| toString <| fnP.getId ++ arg.getId) else none),
-    (fnN.getId, .ofList <| Array.toList <| args_fns.filterMap fun (arg, fn) => if fn == fnN then (arg.getId, Lean.mkIdent <| toString <| fnN.getId ++ arg.getId) else none)
+    (fnP.getId, .ofList <| Array.toList <| args_fns.filterMap fun (arg, fn) => if fn.map (·.1) == fnP then (arg.getId, fn.get!.2) else none),
+    (fnN.getId, .ofList <| Array.toList <| args_fns.filterMap fun (arg, fn) => if fn.map (·.1) == fnN then (arg.getId, fn.get!.2) else none)
   ]) rhs⟩))
 
 mutual
@@ -52,24 +62,22 @@ inductive TypN
 
 end
 
-compile_inductive% TypP
-
 macro_rules
   | `(
     mutual rec
 
     $[@[$attrP,*]]?
     def $fnP:ident : ($A:ident : TypP) → $motiveP
-      $armP:matchAlt*
+      $altP:matchAlt*
 
     $[@[$attrN,*]]?
     def $fnN:ident : ($X:ident : TypN) → $motiveN
-      $armN:matchAlt*
+      $altN:matchAlt*
 
     end
   ) => do
-  let armP ← armP.mapM parseArm
-  let armN ← armN.mapM parseArm
+  let armP ← altP.mapM parseArm
+  let armN ← altN.mapM parseArm
 
   let #[`void, `unit, `sum, `prod, `U] := armP.map fun (ctor, _) => ctor.getId
     | Lean.Macro.throwError "invalid arms"
@@ -92,15 +100,34 @@ macro_rules
       #[fnP]
     ] |>.mapM <| processRecArgs fnP fnN)
 
-  let fnP_eqs := armP.map fun (ctor, _, _) => Lean.mkIdent <| fnP.getId.str s!"_eq_{ctor}"
-  let fnN_eqs := armN.map fun (ctor, _, _) => Lean.mkIdent <| fnN.getId.str s!"_eq_{ctor}"
+  let fnP_imp := Lean.mkIdent <| fnP.getId.str "_unsafe_rec_"
+  let fnN_imp := Lean.mkIdent <| fnN.getId.str "_unsafe_rec_"
+  let imps := .ofList [(fnP.getId, fnP_imp), (fnN.getId, fnN_imp)]
+
+  let fnP_eqs := armP.map fun (ctor, _, _) => Lean.mkIdent <| fnP.getId.str s!"_eq_{ctor.getId}"
+  let fnN_eqs := armN.map fun (ctor, _, _) => Lean.mkIdent <| fnN.getId.str s!"_eq_{ctor.getId}"
 
   let registerEqnThms := Lean.mkCIdent <| (`_private.Lean.Meta.Eqns).num 0 ++ `Lean.Meta.registerEqnThms
 
+  let fnP_unfold := Lean.mkIdent <| fnP.getId.str "_unfold"
+  let fnN_unfold := Lean.mkIdent <| fnN.getId.str "_unfold"
+
   `(
+    mutual
+
+    unsafe def $fnP_imp : ($A : TypP) → $motiveP
+      $(altP.map fun alt => ⟨rename imps alt⟩):matchAlt*
+
+    unsafe def $fnN_imp : ($X : TypN) → $motiveN
+      $(altN.map fun alt => ⟨rename imps alt⟩):matchAlt*
+
+    end
+
+    @[implemented_by $fnP_imp]
     def $fnP : ($A : TypP) → $motiveP :=
       @TypP.rec $recArgs*
 
+    @[implemented_by $fnN_imp]
     def $fnN : ($X : TypN) → $motiveN :=
       @TypN.rec $recArgs*
 
@@ -119,6 +146,17 @@ macro_rules
 
     run_elab $registerEqnThms:ident ``$fnP #[$[``$fnP_eqs],*]
     run_elab $registerEqnThms:ident ``$fnN #[$[``$fnN_eqs],*]
+
+    def $fnP_unfold ($A : TypP) : $fnP $A = match $A:ident with $altP:matchAlt* :=
+      match $A:ident with
+      $(← armP.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
+
+    def $fnN_unfold ($X : TypN) : $fnN $X = match $X:ident with $altN:matchAlt* :=
+      match $X:ident with
+      $(← armN.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
+
+    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnP ``$fnP_unfold }
+    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnN ``$fnN_unfold }
 
     attribute [$(attrP.getD ⟨#[]⟩),*] $fnP
     attribute [$(attrN.getD ⟨#[]⟩),*] $fnN
@@ -160,24 +198,22 @@ inductive ExpN : (Γ : Ctx) → (X : TypN) → Type
 
 end
 
-compile_inductive% ExpP
-
 macro_rules
   | `(
     mutual rec
 
     $[@[$attrP,*]]?
     def $fnP:ident : ($V:ident : ExpP $ΓP:ident $A:ident) → $motiveP
-      $armP:matchAlt*
+      $altP:matchAlt*
 
     $[@[$attrN,*]]?
     def $fnN:ident : ($C:ident : ExpN $ΓN:ident $X:ident) → $motiveN
-      $armN:matchAlt*
+      $altN:matchAlt*
 
     end
   ) => do
-  let armP ← armP.mapM parseArm
-  let armN ← armN.mapM parseArm
+  let armP ← altP.mapM parseArm
+  let armN ← altN.mapM parseArm
 
   let #[`var, `triv, `inl, `inr, `pair, `susp] := armP.map fun (ctor, _) => ctor.getId
     | Lean.Macro.throwError "invalid arms"
@@ -210,12 +246,34 @@ macro_rules
       #[fnN, fnN]
     ] |>.mapM <| processRecArgs fnP fnN)
 
-  -- TODO: equations
+  let fnP_imp := Lean.mkIdent <| fnP.getId.str "_unsafe_rec_"
+  let fnN_imp := Lean.mkIdent <| fnN.getId.str "_unsafe_rec_"
+  let imps := .ofList [(fnP.getId, fnP_imp), (fnN.getId, fnN_imp)]
+
+  let fnP_eqs := armP.map fun (ctor, _, _) => Lean.mkIdent <| fnP.getId.str s!"_eq_{ctor.getId}"
+  let fnN_eqs := armN.map fun (ctor, _, _) => Lean.mkIdent <| fnN.getId.str s!"_eq_{ctor.getId}"
+
+  let registerEqnThms := Lean.mkCIdent <| (`_private.Lean.Meta.Eqns).num 0 ++ `Lean.Meta.registerEqnThms
+
+  let fnP_unfold := Lean.mkIdent <| fnP.getId.str "_unfold"
+  let fnN_unfold := Lean.mkIdent <| fnN.getId.str "_unfold"
 
   `(
+    mutual
+
+    unsafe def $fnP_imp {$ΓP $A} : ($V : ExpP $ΓP $A) → $motiveP
+      $(altP.map fun alt => ⟨rename imps alt⟩):matchAlt*
+
+    unsafe def $fnN_imp {$ΓN $X} : ($C : ExpN $ΓN $X) → $motiveN
+      $(altN.map fun alt => ⟨rename imps alt⟩):matchAlt*
+
+    end
+
+    @[implemented_by $fnP_imp]
     def $fnP : ∀ {$ΓP $A}, ($V : ExpP $ΓP $A) → $motiveP :=
       @ExpP.rec $recArgs*
 
+    @[implemented_by $fnN_imp]
     def $fnN : ∀ {$ΓN $X}, ($C : ExpN $ΓN $X) → $motiveN :=
       @ExpN.rec $recArgs*
 
@@ -228,6 +286,25 @@ macro_rules
       annotate% `sunfoldMatch
       match $C:ident with
       $(← armN.mapM fun (ctor, args, rhs) => return ⟨← `(matchAlt| | .$ctor $args* => annotate% `sunfoldMatchAlt $rhs)⟩):matchAlt*
+
+    /-
+    $(⟨Lean.mkNullNode <| ← (fnP_eqs.zip armP).mapM fun (fnP_eq, ctor, args, rhs) => `(private theorem $fnP_eq {$args*} : $fnP (.$ctor $args*) = $rhs := rfl)⟩):command
+    $(⟨Lean.mkNullNode <| ← (fnN_eqs.zip armN).mapM fun (fnN_eq, ctor, args, rhs) => `(private theorem $fnN_eq {$args*} : $fnN (.$ctor $args*) = $rhs := rfl)⟩):command
+
+    run_elab $registerEqnThms:ident ``$fnP #[$[``$fnP_eqs],*]
+    run_elab $registerEqnThms:ident ``$fnN #[$[``$fnN_eqs],*]
+    -/
+
+    def $fnP_unfold {$ΓP $A} ($V : ExpP $ΓP $A) : @$fnP $ΓP $A $V = match $V:ident with $altP:matchAlt* :=
+      match $V:ident with
+      $(← armP.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
+
+    def $fnN_unfold {$ΓN $X} ($C : ExpN $ΓN $X) : @$fnN $ΓN $X $C = match $C:ident with $altN:matchAlt* :=
+      match $C:ident with
+      $(← armN.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
+
+    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnP ``$fnP_unfold }
+    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnN ``$fnN_unfold }
 
     attribute [$(attrP.getD ⟨#[]⟩),*] $fnP
     attribute [$(attrN.getD ⟨#[]⟩),*] $fnN
@@ -276,7 +353,6 @@ end
 end Renaming
 
 /-
-section -- TODO
 set_option autoImplicit false
 
 private theorem Renaming.renameP._eq_var {A Γ' x} : @Eq (haveI V := @ExpP.var A Γ' x; haveI Γ' := Γ'; haveI A := A; ∀ {Γ}, (γ : Renaming Γ Γ') → ExpP Γ A) (@Renaming.renameP _ _ (@ExpP.var A Γ' x)) (fun γ => .var (γ x)) := rfl
@@ -305,7 +381,6 @@ private theorem Renaming.renameP._eq_inr {Γ' A₂ A₁ V} : @Eq (haveI V := @Ex
 #check ExpN.ap
 #check ExpN.ret
 #check ExpN.bind
-end -- TODO
 -/
 
 @[simp]
