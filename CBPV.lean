@@ -1,49 +1,4 @@
-import Common.Meta
-
-partial def rename (names : Lean.HashMap Lean.Name Lean.Ident) : Lean.Syntax → Lean.Syntax
-  | .node info kind args => .node info kind <| args.map <| rename names
-  | stx@(.ident _ _ name _) =>
-    if let some id := names.find? name then
-      id
-    else
-      stx
-  | stx => stx
-
-partial def replaceRecCalls (fns : Lean.HashMap Lean.Name (Lean.HashMap Lean.Name Lean.Ident)) : Lean.Macro
-  | .node info kind args => do
-    if kind == ``Lean.Parser.Term.app then
-      if let #[f, .node .none `null as] := args then
-        if let some a := as.get? 0 then
-          if let some aps := fns.find? f.getId then
-            if let some ap := aps.find? a.getId
-            then return Lean.Syntax.mkApp ap <| .mk <| ← (as.extract 1 as.size).mapM (replaceRecCalls fns)
-            else Lean.Macro.throwErrorAt f "invalid recursive call"
-    return .node info kind <| ← args.mapM (replaceRecCalls fns)
-  | stx =>
-    if fns.contains stx.getId
-    then Lean.Macro.throwErrorAt stx "invalid recursive call"
-    else return stx
-
-def notEnd := Lean.Parser.notSymbol "end"
-syntax "mutual" "rec" (notEnd command)+ "end" : command
-
-initialize Lean.Meta.registerGetUnfoldEqnFn fun declName => Lean.Elab.Eqns.getUnfoldFor? declName fun _ => none
-
-abbrev matchAlt := Lean.Parser.Term.matchAlt
-
-def parseArm : Lean.TSyntax ``Lean.Parser.Term.matchAlt → Lean.MacroM (Lean.Ident × Array Lean.Ident × Lean.Term)
-  | `(matchAlt| | .$ctor $args:ident* => $rhs) => return (ctor, args, rhs)
-  | `(matchAlt| | .$ctor              => $rhs) => return (ctor, #[],  rhs)
-  | stx                                        => Lean.Macro.throwErrorAt stx "invalid arm"
-
-def processRecArgs (fnP fnN : Lean.Ident) : (Lean.Ident × Array Lean.Ident × Lean.Term) × Array (Option Lean.Ident) → Lean.MacroM Lean.Term
-  | ((_, args, rhs), fns) => do
-  let args_fns := args.zipWith fns fun arg fn => (arg, fn.map fun fn => (fn, Lean.mkIdent <| toString <| fn.getId ++ arg.getId))
-  let fnArgs := args_fns.filterMap (·.2.map (·.2))
-  `(fun $args* $fnArgs:ident* => $(⟨← replaceRecCalls (.ofList [
-    (fnP.getId, .ofList <| Array.toList <| args_fns.filterMap fun (arg, fn) => if fn.map (·.1) == fnP then (arg.getId, fn.get!.2) else none),
-    (fnN.getId, .ofList <| Array.toList <| args_fns.filterMap fun (arg, fn) => if fn.map (·.1) == fnN then (arg.getId, fn.get!.2) else none)
-  ]) rhs⟩))
+import Common.Structural
 
 mutual
 
@@ -61,106 +16,6 @@ inductive TypN
   | F    (A : TypP)
 
 end
-
-macro_rules
-  | `(
-    mutual rec
-
-    $[@[$attrP,*]]?
-    def $fnP:ident : ($A:ident : TypP) → $motiveP
-      $altP:matchAlt*
-
-    $[@[$attrN,*]]?
-    def $fnN:ident : ($X:ident : TypN) → $motiveN
-      $altN:matchAlt*
-
-    end
-  ) => do
-  let armP ← altP.mapM parseArm
-  let armN ← altN.mapM parseArm
-
-  let #[`void, `unit, `sum, `prod, `U] := armP.map fun (ctor, _) => ctor.getId
-    | Lean.Macro.throwError "invalid arms"
-
-  let #[`unit, `prod, `arr, `F] := armN.map fun (ctor, _) => ctor.getId
-    | Lean.Macro.throwError "invalid arms"
-
-  let recArgs := #[← `(fun $A => $motiveP), ← `(fun $X => $motiveN)]
-    ++ (← armP.zip #[
-      #[],
-      #[],
-      #[some fnP, fnP],
-      #[fnP, fnP],
-      #[fnN]
-    ] |>.mapM <| processRecArgs fnP fnN)
-    ++ (← armN.zip #[
-      #[],
-      #[some fnN, fnN],
-      #[fnP, fnN],
-      #[fnP]
-    ] |>.mapM <| processRecArgs fnP fnN)
-
-  let fnP_imp := Lean.mkIdent <| fnP.getId.str "_unsafe_rec_"
-  let fnN_imp := Lean.mkIdent <| fnN.getId.str "_unsafe_rec_"
-  let imps := .ofList [(fnP.getId, fnP_imp), (fnN.getId, fnN_imp)]
-
-  let fnP_eqs := armP.map fun (ctor, _, _) => Lean.mkIdent <| fnP.getId.str s!"_eq_{ctor.getId}"
-  let fnN_eqs := armN.map fun (ctor, _, _) => Lean.mkIdent <| fnN.getId.str s!"_eq_{ctor.getId}"
-
-  let registerEqnThms := Lean.mkCIdent <| (`_private.Lean.Meta.Eqns).num 0 ++ `Lean.Meta.registerEqnThms
-
-  let fnP_unfold := Lean.mkIdent <| fnP.getId.str "_unfold"
-  let fnN_unfold := Lean.mkIdent <| fnN.getId.str "_unfold"
-
-  `(
-    mutual
-
-    unsafe def $fnP_imp : ($A : TypP) → $motiveP
-      $(altP.map fun alt => ⟨rename imps alt⟩):matchAlt*
-
-    unsafe def $fnN_imp : ($X : TypN) → $motiveN
-      $(altN.map fun alt => ⟨rename imps alt⟩):matchAlt*
-
-    end
-
-    @[implemented_by $fnP_imp]
-    def $fnP : ($A : TypP) → $motiveP :=
-      @TypP.rec $recArgs*
-
-    @[implemented_by $fnN_imp]
-    def $fnN : ($X : TypN) → $motiveN :=
-      @TypN.rec $recArgs*
-
-    def $(Lean.mkIdent <| Lean.Meta.mkSmartUnfoldingNameFor fnP.getId) ($A : TypP) : $motiveP :=
-      annotate% `sunfoldMatch
-      match $A:ident with
-      $(← armP.mapM fun (ctor, args, rhs) => return ⟨← `(matchAlt| | .$ctor $args* => annotate% `sunfoldMatchAlt $rhs)⟩):matchAlt*
-
-    def $(Lean.mkIdent <| Lean.Meta.mkSmartUnfoldingNameFor fnN.getId) ($X : TypN) : $motiveN :=
-      annotate% `sunfoldMatch
-      match $X:ident with
-      $(← armN.mapM fun (ctor, args, rhs) => return ⟨← `(matchAlt| | .$ctor $args* => annotate% `sunfoldMatchAlt $rhs)⟩):matchAlt*
-
-    $(⟨Lean.mkNullNode <| ← (fnP_eqs.zip armP).mapM fun (fnP_eq, ctor, args, rhs) => `(private theorem $fnP_eq {$args*} : $fnP (.$ctor $args*) = $rhs := rfl)⟩):command
-    $(⟨Lean.mkNullNode <| ← (fnN_eqs.zip armN).mapM fun (fnN_eq, ctor, args, rhs) => `(private theorem $fnN_eq {$args*} : $fnN (.$ctor $args*) = $rhs := rfl)⟩):command
-
-    run_elab $registerEqnThms:ident ``$fnP #[$[``$fnP_eqs],*]
-    run_elab $registerEqnThms:ident ``$fnN #[$[``$fnN_eqs],*]
-
-    def $fnP_unfold ($A : TypP) : $fnP $A = match $A:ident with $altP:matchAlt* :=
-      match $A:ident with
-      $(← armP.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
-
-    def $fnN_unfold ($X : TypN) : $fnN $X = match $X:ident with $altN:matchAlt* :=
-      match $X:ident with
-      $(← armN.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
-
-    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnP ``$fnP_unfold }
-    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnN ``$fnN_unfold }
-
-    attribute [$(attrP.getD ⟨#[]⟩),*] $fnP
-    attribute [$(attrN.getD ⟨#[]⟩),*] $fnN
-  )
 
 inductive Ctx
   | nil
@@ -198,194 +53,57 @@ inductive ExpN : (Γ : Ctx) → (X : TypN) → Type
 
 end
 
-macro_rules
-  | `(
-    mutual rec
-
-    $[@[$attrP,*]]?
-    def $fnP:ident : ($V:ident : ExpP $ΓP:ident $A:ident) → $motiveP
-      $altP:matchAlt*
-
-    $[@[$attrN,*]]?
-    def $fnN:ident : ($C:ident : ExpN $ΓN:ident $X:ident) → $motiveN
-      $altN:matchAlt*
-
-    end
-  ) => do
-  let armP ← altP.mapM parseArm
-  let armN ← altN.mapM parseArm
-
-  let #[`var, `triv, `inl, `inr, `pair, `susp] := armP.map fun (ctor, _) => ctor.getId
-    | Lean.Macro.throwError "invalid arms"
-
-  let #[`abort, `check, `case, `split, `force, `triv, `pair, `prl, `prr, `lam, `ap, `ret, `bind] := armN.map fun (ctor, _) => ctor.getId
-    | Lean.Macro.throwError "invalid arms"
-
-  let recArgs := #[← `(fun $ΓP $A $V => $motiveP), ← `(fun $ΓN $X $C => $motiveN)]
-    ++ (← armP.zip #[
-      #[none],
-      #[],
-      #[fnP],
-      #[fnP],
-      #[fnP, fnP],
-      #[fnN]
-    ] |>.mapM <| processRecArgs fnP fnN)
-    ++ (← armN.zip #[
-      #[some fnP],
-      #[fnP, fnN],
-      #[fnP, fnN, fnN],
-      #[fnP, fnN],
-      #[fnP],
-      #[],
-      #[fnN, fnN],
-      #[fnN],
-      #[fnN],
-      #[fnN],
-      #[fnN, fnP],
-      #[fnP],
-      #[fnN, fnN]
-    ] |>.mapM <| processRecArgs fnP fnN)
-
-  let fnP_imp := Lean.mkIdent <| fnP.getId.str "_unsafe_rec_"
-  let fnN_imp := Lean.mkIdent <| fnN.getId.str "_unsafe_rec_"
-  let imps := .ofList [(fnP.getId, fnP_imp), (fnN.getId, fnN_imp)]
-
-  let fnP_eqs := armP.map fun (ctor, _, _) => Lean.mkIdent <| fnP.getId.str s!"_eq_{ctor.getId}"
-  let fnN_eqs := armN.map fun (ctor, _, _) => Lean.mkIdent <| fnN.getId.str s!"_eq_{ctor.getId}"
-
-  let registerEqnThms := Lean.mkCIdent <| (`_private.Lean.Meta.Eqns).num 0 ++ `Lean.Meta.registerEqnThms
-
-  let fnP_unfold := Lean.mkIdent <| fnP.getId.str "_unfold"
-  let fnN_unfold := Lean.mkIdent <| fnN.getId.str "_unfold"
-
-  `(
-    mutual
-
-    unsafe def $fnP_imp {$ΓP $A} : ($V : ExpP $ΓP $A) → $motiveP
-      $(altP.map fun alt => ⟨rename imps alt⟩):matchAlt*
-
-    unsafe def $fnN_imp {$ΓN $X} : ($C : ExpN $ΓN $X) → $motiveN
-      $(altN.map fun alt => ⟨rename imps alt⟩):matchAlt*
-
-    end
-
-    @[implemented_by $fnP_imp]
-    def $fnP : ∀ {$ΓP $A}, ($V : ExpP $ΓP $A) → $motiveP :=
-      @ExpP.rec $recArgs*
-
-    @[implemented_by $fnN_imp]
-    def $fnN : ∀ {$ΓN $X}, ($C : ExpN $ΓN $X) → $motiveN :=
-      @ExpN.rec $recArgs*
-
-    def $(Lean.mkIdent <| Lean.Meta.mkSmartUnfoldingNameFor fnP.getId) {$ΓP $A} ($V : ExpP $ΓP $A) : $motiveP :=
-      annotate% `sunfoldMatch
-      match $V:ident with
-      $(← armP.mapM fun (ctor, args, rhs) => return ⟨← `(matchAlt| | .$ctor $args* => annotate% `sunfoldMatchAlt $rhs)⟩):matchAlt*
-
-    def $(Lean.mkIdent <| Lean.Meta.mkSmartUnfoldingNameFor fnN.getId) {$ΓN $X} ($C : ExpN $ΓN $X) : $motiveN :=
-      annotate% `sunfoldMatch
-      match $C:ident with
-      $(← armN.mapM fun (ctor, args, rhs) => return ⟨← `(matchAlt| | .$ctor $args* => annotate% `sunfoldMatchAlt $rhs)⟩):matchAlt*
-
-    /-
-    $(⟨Lean.mkNullNode <| ← (fnP_eqs.zip armP).mapM fun (fnP_eq, ctor, args, rhs) => `(private theorem $fnP_eq {$args*} : $fnP (.$ctor $args*) = $rhs := rfl)⟩):command
-    $(⟨Lean.mkNullNode <| ← (fnN_eqs.zip armN).mapM fun (fnN_eq, ctor, args, rhs) => `(private theorem $fnN_eq {$args*} : $fnN (.$ctor $args*) = $rhs := rfl)⟩):command
-
-    run_elab $registerEqnThms:ident ``$fnP #[$[``$fnP_eqs],*]
-    run_elab $registerEqnThms:ident ``$fnN #[$[``$fnN_eqs],*]
-    -/
-
-    def $fnP_unfold {$ΓP $A} ($V : ExpP $ΓP $A) : @$fnP $ΓP $A $V = match $V:ident with $altP:matchAlt* :=
-      match $V:ident with
-      $(← armP.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
-
-    def $fnN_unfold {$ΓN $X} ($C : ExpN $ΓN $X) : @$fnN $ΓN $X $C = match $C:ident with $altN:matchAlt* :=
-      match $C:ident with
-      $(← armN.mapM fun (ctor, args, _) => return ⟨← `(matchAlt| | .$ctor $args* => rfl)⟩):matchAlt*
-
-    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnP ``$fnP_unfold }
-    run_elab Lean.modifyEnv fun env => Lean.Elab.Eqns.unfoldEqnExt.modifyState env fun s => { s with map := s.map.insert ``$fnN ``$fnN_unfold }
-
-    attribute [$(attrP.getD ⟨#[]⟩),*] $fnP
-    attribute [$(attrN.getD ⟨#[]⟩),*] $fnN
-  )
-
 def Renaming (Γ Γ' : Ctx) : Type :=
   ∀ {{A}}, (x : Var A Γ') → Var A Γ
 
 namespace Renaming
 
 @[simp]
-def cons (γ : Renaming Γ Γ') : Renaming (Γ.cons A) (Γ'.cons A)
+def weaken (γ : Renaming Γ Γ') : Renaming (Γ.cons A) (Γ'.cons A)
   | _, .zero   => .zero
   | _, .succ x => .succ (γ x)
 
-mutual rec
+@[structural]
+mutual
 
 @[simp]
-def renameP : (V : ExpP Γ' A) → ∀ {Γ}, (γ : Renaming Γ Γ') → ExpP Γ A
-  | .var x      => fun γ => .var (γ x)
-  | .triv       => fun _ => .triv
-  | .inl V      => fun γ => .inl (renameP V γ)
-  | .inr V      => fun γ => .inr (renameP V γ)
-  | .pair V₁ V₂ => fun γ => .pair (renameP V₁ γ) (renameP V₂ γ)
-  | .susp C     => fun γ => .susp (renameN C γ)
+def applyP (γ : Renaming Γ Γ') : (V : ExpP Γ' A) → ExpP Γ A
+  | .var x      => .var (γ x)
+  | .triv       => .triv
+  | .inl V      => .inl (γ.applyP V)
+  | .inr V      => .inr (γ.applyP V)
+  | .pair V₁ V₂ => .pair (γ.applyP V₁) (γ.applyP V₂)
+  | .susp C     => .susp (γ.applyN C)
 
 @[simp]
-def renameN : (C : ExpN Γ' X) → ∀ {Γ}, (γ : Renaming Γ Γ') → ExpN Γ X
-  | .abort V      => fun γ => .abort (renameP V γ)
-  | .check V C    => fun γ => .check (renameP V γ) (renameN C γ)
-  | .case V C₁ C₂ => fun γ => .case (renameP V γ) (renameN C₁ γ.cons) (renameN C₂ γ.cons)
-  | .split V C    => fun γ => .split (renameP V γ) (renameN C γ.cons.cons)
-  | .force V      => fun γ => .force (renameP V γ)
+def applyN (γ : Renaming Γ Γ') : (C : ExpN Γ' X) → ExpN Γ X
+  | .abort V      => .abort (γ.applyP V)
+  | .check V C    => .check (γ.applyP V) (γ.applyN C)
+  | .case V C₁ C₂ => .case (γ.applyP V) (γ.weaken.applyN C₁) (γ.weaken.applyN C₂)
+  | .split V C    => .split (γ.applyP V) (γ.weaken.weaken.applyN C)
+  | .force V      => .force (γ.applyP V)
 
-  | .triv       => fun _ => .triv
-  | .pair C₁ C₂ => fun γ => .pair (renameN C₁ γ) (renameN C₂ γ)
-  | .prl C      => fun γ => .prl (renameN C γ)
-  | .prr C      => fun γ => .prr (renameN C γ)
-  | .lam C      => fun γ => .lam (renameN C γ.cons)
-  | .ap C V     => fun γ => .ap (renameN C γ) (renameP V γ)
-  | .ret V      => fun γ => .ret (renameP V γ)
-  | .bind C C₁  => fun γ => .bind (renameN C γ) (renameN C₁ γ.cons)
+  | .triv       => .triv
+  | .pair C₁ C₂ => .pair (γ.applyN C₁) (γ.applyN C₂)
+  | .prl C      => .prl (γ.applyN C)
+  | .prr C      => .prr (γ.applyN C)
+  | .lam C      => .lam (γ.weaken.applyN C)
+  | .ap C V     => .ap (γ.applyN C) (γ.applyP V)
+  | .ret V      => .ret (γ.applyP V)
+  | .bind C C₁  => .bind (γ.applyN C) (γ.weaken.applyN C₁)
 
 end
 
+@[simp]
+def cons (γ : Renaming Γ Γ') (x : Var A Γ) : Renaming Γ (Γ'.cons A)
+  | _, .zero   => x
+  | _, .succ x => γ x
+
 end Renaming
 
-/-
-set_option autoImplicit false
-
-private theorem Renaming.renameP._eq_var {A Γ' x} : @Eq (haveI V := @ExpP.var A Γ' x; haveI Γ' := Γ'; haveI A := A; ∀ {Γ}, (γ : Renaming Γ Γ') → ExpP Γ A) (@Renaming.renameP _ _ (@ExpP.var A Γ' x)) (fun γ => .var (γ x)) := rfl
-private theorem Renaming.renameP._eq_triv {Γ'} : @Eq (haveI V := @ExpP.triv Γ'; haveI Γ' := Γ'; haveI A := .unit; ∀ {Γ}, (γ : Renaming Γ Γ') → ExpP Γ A) (@Renaming.renameP _ _ (@ExpP.triv Γ')) (fun _ => .triv) := rfl
-private theorem Renaming.renameP._eq_inl {Γ' A₁ A₂ V} : @Eq (haveI V := @ExpP.inl Γ' A₁ A₂ V; haveI Γ' := Γ'; haveI A := TypP.sum A₁ A₂; ∀ {Γ}, (γ : Renaming Γ Γ') → ExpP Γ A) (@Renaming.renameP _ _ (@ExpP.inl Γ' A₁ A₂ V)) (fun γ => .inl (renameP V γ)) := rfl
-private theorem Renaming.renameP._eq_inr {Γ' A₂ A₁ V} : @Eq (haveI V := @ExpP.inr Γ' A₂ A₁ V; haveI Γ' := Γ'; haveI A := TypP.sum A₁ A₂; ∀ {Γ}, (γ : Renaming Γ Γ') → ExpP Γ A) (@Renaming.renameP _ _ (@ExpP.inr Γ' A₂ A₁ V)) (fun γ => .inr (renameP V γ)) := rfl
-
-#check ExpP.var
-#check ExpP.triv
-#check ExpP.inl
-#check ExpP.inr
-#check ExpP.pair
-#check ExpP.susp
-
-#check ExpN.abort
-#check ExpN.check
-#check ExpN.case
-#check ExpN.split
-#check ExpN.force
-
-#check ExpN.triv
-#check ExpN.pair
-#check ExpN.prl
-#check ExpN.prr
-#check ExpN.lam
-#check ExpN.ap
-#check ExpN.ret
-#check ExpN.bind
--/
-
 @[simp]
-def ExpP.weaken (V : ExpP Γ A) : ExpP (Γ.cons A') A :=
-  Renaming.renameP V fun _ => .succ
+def ExpP.weaken : (V : ExpP Γ A) → ExpP (Γ.cons A') A :=
+  Renaming.applyP fun _ => .succ
 
 def Subst (Γ Γ' : Ctx) : Type :=
   ∀ {{A}}, (x : Var A Γ') → ExpP Γ A
@@ -393,42 +111,43 @@ def Subst (Γ Γ' : Ctx) : Type :=
 namespace Subst
 
 @[simp]
-def cons (γ : Subst Γ Γ') : Subst (Γ.cons A) (Γ'.cons A)
+def weaken (γ : Subst Γ Γ') : Subst (Γ.cons A) (Γ'.cons A)
   | _, .zero   => .var .zero
   | _, .succ x => .weaken (γ x)
 
-mutual rec
+@[structural]
+mutual
 
 @[simp]
-def substP : (V : ExpP Γ' A) → ∀ {Γ}, (γ : Subst Γ Γ') → ExpP Γ A
-  | .var x      => fun γ => γ x
-  | .triv       => fun _ => .triv
-  | .inl V      => fun γ => .inl (substP V γ)
-  | .inr V      => fun γ => .inr (substP V γ)
-  | .pair V₁ V₂ => fun γ => .pair (substP V₁ γ) (substP V₂ γ)
-  | .susp C     => fun γ => .susp (substN C γ)
+def applyP (γ : Subst Γ Γ') : (V : ExpP Γ' A) → ExpP Γ A
+  | .var x      => γ x
+  | .triv       => .triv
+  | .inl V      => .inl (γ.applyP V)
+  | .inr V      => .inr (γ.applyP V)
+  | .pair V₁ V₂ => .pair (γ.applyP V₁) (γ.applyP V₂)
+  | .susp C     => .susp (γ.applyN C)
 
 @[simp]
-def substN : (C : ExpN Γ' X) → ∀ {Γ}, (γ : Subst Γ Γ') → ExpN Γ X
-  | .abort V      => fun γ => .abort (substP V γ)
-  | .check V C    => fun γ => .check (substP V γ) (substN C γ)
-  | .case V C₁ C₂ => fun γ => .case (substP V γ) (substN C₁ γ.cons) (substN C₂ γ.cons)
-  | .split V C    => fun γ => .split (substP V γ) (substN C γ.cons.cons)
-  | .force V      => fun γ => .force (substP V γ)
+def applyN (γ : Subst Γ Γ') : (C : ExpN Γ' X) → ExpN Γ X
+  | .abort V      => .abort (γ.applyP V)
+  | .check V C    => .check (γ.applyP V) (γ.applyN C)
+  | .case V C₁ C₂ => .case (γ.applyP V) (γ.weaken.applyN C₁) (γ.weaken.applyN C₂)
+  | .split V C    => .split (γ.applyP V) (γ.weaken.weaken.applyN C)
+  | .force V      => .force (γ.applyP V)
 
-  | .triv       => fun _ => .triv
-  | .pair C₁ C₂ => fun γ => .pair (substN C₁ γ) (substN C₂ γ)
-  | .prl C      => fun γ => .prl (substN C γ)
-  | .prr C      => fun γ => .prr (substN C γ)
-  | .lam C      => fun γ => .lam (substN C γ.cons)
-  | .ap C V     => fun γ => .ap (substN C γ) (substP V γ)
-  | .ret V      => fun γ => .ret (substP V γ)
-  | .bind C C₁  => fun γ => .bind (substN C γ) (substN C₁ γ.cons)
+  | .triv       => .triv
+  | .pair C₁ C₂ => .pair (γ.applyN C₁) (γ.applyN C₂)
+  | .prl C      => .prl (γ.applyN C)
+  | .prr C      => .prr (γ.applyN C)
+  | .lam C      => .lam (γ.weaken.applyN C)
+  | .ap C V     => .ap (γ.applyN C) (γ.applyP V)
+  | .ret V      => .ret (γ.applyP V)
+  | .bind C C₁  => .bind (γ.applyN C) (γ.weaken.applyN C₁)
 
 end
 
 @[simp]
-def extend (γ : Subst Γ Γ') (V : ExpP Γ A) : Subst Γ (Γ'.cons A)
+def cons (γ : Subst Γ Γ') (V : ExpP Γ A) : Subst Γ (Γ'.cons A)
   | _, .zero   => V
   | _, .succ x => γ x
 
@@ -436,19 +155,19 @@ end Subst
 
 @[simp]
 def ExpN.subst (C : ExpN (Γ.cons A) X) (V : ExpP Γ A) : ExpN Γ X :=
-  Subst.extend (fun _ => .var) V |>.substN C
+  Subst.cons (fun _ => .var) V |>.applyN C
 
 @[simp]
 def ExpN.subst₂ (C : ExpN (Γ.cons A₁ |>.cons A₂) X) (V₁ : ExpP Γ A₁) (V₂ : ExpP Γ A₂) : ExpN Γ X :=
-  Subst.extend (fun _ => .var) V₁ |>.extend V₂ |>.substN C
+  Subst.cons (fun _ => .var) V₁ |>.cons V₂ |>.applyN C
 
 section
 
-local macro "lemma" M:ident γ:ident γTy:ident γFnP:ident γFnN:ident γ':ident γ'Ty:ident γ'FnP:ident γ'FnN:ident fnP:ident fnN:ident arg:term : tactic =>
+local macro "lemma" M:ident γ:ident γTy:ident γ':ident γ'Ty:ident fnP:ident fnN:ident arg:term : tactic =>
   `(tactic| (
     apply $(M).rec
-      (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, ($γ : $γTy Γ Γ') → ($γ' : $γ'Ty Γ' Γ'') → $γ.$γFnP ($γ'.$γ'FnP V) = $fnP V $arg)
-      (motive_2 := fun Γ'' X C => ∀ {Γ Γ'}, ($γ : $γTy Γ Γ') → ($γ' : $γ'Ty Γ' Γ'') → $γ.$γFnN ($γ'.$γ'FnN C) = $fnN C $arg)
+      (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, ($γ : $γTy Γ Γ') → ($γ' : $γ'Ty Γ' Γ'') → $(γ).applyP ($(γ').applyP V) = $fnP $arg V)
+      (motive_2 := fun Γ'' X C => ∀ {Γ Γ'}, ($γ : $γTy Γ Γ') → ($γ' : $γ'Ty Γ' Γ'') → $(γ).applyN ($(γ').applyN C) = $fnN $arg C)
       <;> intros
       <;> intro _ _ _ _
       <;> simp [*]
@@ -462,34 +181,34 @@ local macro "lemma" M:ident γ:ident γTy:ident γFnP:ident γFnN:ident γ':iden
   ))
 
 @[simp]
-theorem Renaming.renameP_renameP (γ : Renaming Γ Γ') (γ' : Renaming Γ' Γ'') : γ.renameP (γ'.renameP V) = renameP V (fun A x => γ (γ' x)) :=
-  by lemma V γ Renaming renameP renameN γ' Renaming renameP renameN renameP renameN fun A x => γ (γ' x)
+theorem Renaming.rename_rename (γ : Renaming Γ Γ') (γ' : Renaming Γ' Γ'') : γ.applyP (γ'.applyP V) = applyP (fun A x => γ (γ' x)) V :=
+  by lemma V γ Renaming γ' Renaming applyP applyN fun A x => γ (γ' x)
 
 @[simp]
-theorem Subst.substP_renameP (γ : Subst Γ Γ') (γ' : Renaming Γ' Γ'') : γ.substP (γ'.renameP V) = substP V (fun A x => γ (γ' x)) :=
-  by lemma V γ Subst substP substN γ' Renaming renameP renameN substP substN fun A x => γ (γ' x)
+theorem Subst.subst_rename (γ : Subst Γ Γ') (γ' : Renaming Γ' Γ'') : γ.applyP (γ'.applyP V) = applyP (fun A x => γ (γ' x)) V :=
+  by lemma V γ Subst γ' Renaming applyP applyN fun A x => γ (γ' x)
 
 @[simp]
-theorem Subst.renameP_substP (γ : Renaming Γ Γ') (γ' : Subst Γ' Γ'') : γ.renameP (γ'.substP V) = substP V (fun A x => γ.renameP (γ' x)) :=
-  by lemma V γ Renaming renameP renameN γ' Subst substP substN substP substN fun A x => γ.renameP (γ' x)
+theorem Subst.rename_subst (γ : Renaming Γ Γ') (γ' : Subst Γ' Γ'') : γ.applyP (γ'.applyP V) = applyP (fun A x => γ.applyP (γ' x)) V :=
+  by lemma V γ Renaming γ' Subst applyP applyN fun A x => γ.applyP (γ' x)
 
 @[simp]
-theorem Subst.substN_substN (γ : Subst Γ Γ') (γ' : Subst Γ' Γ'') : γ.substN (γ'.substN C) = substN C (fun A x => γ.substP (γ' x)) :=
-  by lemma C γ Subst substP substN γ' Subst substP substN substP substN fun A x => γ.substP (γ' x)
+theorem Subst.subst_subst (γ : Subst Γ Γ') (γ' : Subst Γ' Γ'') : γ.applyN (γ'.applyN C) = applyN (fun A x => γ.applyP (γ' x)) C :=
+  by lemma C γ Subst γ' Subst applyP applyN fun A x => γ.applyP (γ' x)
 
 end
 
 @[simp]
-theorem Subst.cons_var : cons (Γ := Γ) (A := A) (fun _ => .var) = fun _ => .var := by
+theorem Subst.weaken_var : weaken (Γ := Γ) (A := A) (fun _ => .var) = fun _ => .var := by
   funext _ x
   cases x
     <;> simp
 
 @[simp]
-theorem Subst.substP_var : substP V (fun _ => .var) = V := by
+theorem Subst.applyP_var : applyP (fun _ => .var) V = V := by
   apply V.rec
-    (motive_1 := fun Γ A V => substP V (fun _ => .var) = V)
-    (motive_2 := fun Γ X C => substN C (fun _ => .var) = C)
+    (motive_1 := fun Γ A V => applyP (fun _ => .var) V = V)
+    (motive_2 := fun Γ X C => applyN (fun _ => .var) C = C)
     <;> intros
     <;> simp [*]
 
@@ -528,7 +247,8 @@ def comp {F : (C : ExpN .nil X) → ExpN .nil Y} (f : ∀ {C C'}, (s : Steps C C
 
 end Reduces
 
-mutual rec
+@[structural]
+mutual
 
 def HTP : (A : TypP) → (V : ExpP .nil A) → Type
   | .void       => nofun
@@ -555,17 +275,17 @@ def HTN.expand : ∀ {X C₁ C₂}, (r₁ : Reduces C₁ C₂) → (ht₂ : HTN 
 def HTSubst (γ : Subst .nil Γ) : Type :=
   ∀ {{A}} x, HTP A (γ x)
 
-def HTSubst.extend (ht_γ : HTSubst γ) (ht : HTP A M) : HTSubst (γ.extend M)
+def HTSubst.cons (ht_γ : HTSubst γ) (ht : HTP A M) : HTSubst (γ.cons M)
   | _, .zero   => ht
   | _, .succ x => ht_γ x
 
 def HTP' Γ A (V : ExpP Γ A) : Type :=
-  ∀ {γ}, (ht_γ : HTSubst γ) → HTP A (γ.substP V)
+  ∀ {γ}, (ht_γ : HTSubst γ) → HTP A (γ.applyP V)
 
 def HTN' Γ X (C : ExpN Γ X) : Type :=
-  ∀ {γ}, (ht_γ : HTSubst γ) → HTN X (γ.substN C)
+  ∀ {γ}, (ht_γ : HTSubst γ) → HTN X (γ.applyN C)
 
-mutual rec
+mutual
 
 def ftlrP : (V : ExpP Γ A) → HTP' Γ A V
   | .var x      => fun ht_γ => ht_γ x
@@ -576,28 +296,28 @@ def ftlrP : (V : ExpP Γ A) → HTP' Γ A V
   | .susp C     => fun ht_γ => ftlrN C ht_γ
 
 def ftlrN : (C : ExpN Γ X) → HTN' Γ X C
-  | .abort V      => fun ht_γ => nomatch Subst.substP V _, ftlrP V ht_γ
+  | .abort V      => fun ht_γ => nomatch Subst.applyP _ V, ftlrP V ht_γ
   | .check V C    => fun ht_γ => show HTN _ (.check ..) from
-                                 match Subst.substP V _, ftlrP V ht_γ with
+                                 match Subst.applyP _ V, ftlrP V ht_γ with
                                  | .triv, ht => .expand (.step .check_triv .refl) (ftlrN C ht_γ)
   | .case V C₁ C₂ => fun ht_γ => show HTN _ (.case ..) from
-                                 match Subst.substP V _, ftlrP V ht_γ with
-                                 | .inl V, ht => .expand (.step .case_inl .refl) <| cast (by subst) <| ftlrN C₁ (ht_γ.extend ht)
-                                 | .inr V, ht => .expand (.step .case_inr .refl) <| cast (by subst) <| ftlrN C₂ (ht_γ.extend ht)
+                                 match Subst.applyP _ V, ftlrP V ht_γ with
+                                 | .inl V, ht => .expand (.step .case_inl .refl) <| cast (by subst) <| ftlrN C₁ (ht_γ.cons ht)
+                                 | .inr V, ht => .expand (.step .case_inr .refl) <| cast (by subst) <| ftlrN C₂ (ht_γ.cons ht)
   | .split V C    => fun ht_γ => show HTN _ (.split ..) from
-                                 match Subst.substP V _, ftlrP V ht_γ with
-                                 | .pair V₁ V₂, (ht₁, ht₂) => .expand (.step .split_pair .refl) <| cast (by subst) <| ftlrN C (ht_γ.extend ht₁ |>.extend ht₂)
+                                 match Subst.applyP _ V, ftlrP V ht_γ with
+                                 | .pair V₁ V₂, (ht₁, ht₂) => .expand (.step .split_pair .refl) <| cast (by subst) <| ftlrN C (ht_γ.cons ht₁ |>.cons ht₂)
   | .force V      => fun ht_γ => show HTN _ (.force ..) from
-                                 match Subst.substP V _, ftlrP V ht_γ with
+                                 match Subst.applyP _ V, ftlrP V ht_γ with
                                  | .susp C, ht => .expand (.step .force_susp .refl) ht
 
   | .triv       => fun ht_γ => ()
-  | .pair C₁ C₂ => fun ht_γ => (HTN.expand (.step .prl_pair .refl) <| ftlrN C₁ ht_γ, HTN.expand (.step .prr_pair .refl) <| ftlrN C₂ ht_γ)
+  | .pair C₁ C₂ => fun ht_γ => (.expand (.step .prl_pair .refl) <| ftlrN C₁ ht_γ, .expand (.step .prr_pair .refl) <| ftlrN C₂ ht_γ)
   | .prl C      => fun ht_γ => let (ht₁, ht₂) := ftlrN C ht_γ; ht₁
   | .prr C      => fun ht_γ => let (ht₁, ht₂) := ftlrN C ht_γ; ht₂
-  | .lam C      => fun ht_γ => fun ht => HTN.expand (.step .ap_lam .refl) <| cast (by subst) <| ftlrN C (ht_γ.extend ht)
+  | .lam C      => fun ht_γ => fun ht => .expand (.step .ap_lam .refl) <| cast (by subst) <| ftlrN C (ht_γ.cons ht)
   | .ap C V     => fun ht_γ => ftlrN C ht_γ (ftlrP V ht_γ)
   | .ret V      => fun ht_γ => ⟨_, ftlrP V ht_γ, .refl⟩
-  | .bind C C₁  => fun ht_γ => let ⟨_, ht, r⟩ := ftlrN C ht_γ; .expand (.trans (.comp .bind r) (.step .bind_ret .refl)) <| cast (by subst) <| ftlrN C₁ (ht_γ.extend ht)
+  | .bind C C₁  => fun ht_γ => let ⟨_, ht, r⟩ := ftlrN C ht_γ; .expand (.trans (.comp .bind r) (.step .bind_ret .refl)) <| cast (by subst) <| ftlrN C₁ (ht_γ.cons ht)
 
 end

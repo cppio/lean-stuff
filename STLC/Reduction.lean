@@ -39,7 +39,7 @@ def Steps.rename (γ : Renaming Γ Γ') : (s : Steps M M') → Steps (γ.apply M
   | lam   s => lam   (s.rename γ.weaken)
   | ap    s => ap    (s.rename γ)
   | ap₁   s => ap₁   (s.rename γ)
-  
+
   | case_inl => cast (congrArg (Steps _) (by lemma)) case_inl
   | case_inr => cast (congrArg (Steps _) (by lemma)) case_inr
   | prl_pair => prl_pair

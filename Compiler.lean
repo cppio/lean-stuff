@@ -1,3 +1,5 @@
+import Common.Structural
+
 namespace CBV
 
 inductive Typ
@@ -133,9 +135,13 @@ def Exp.ofNat : (n : Nat) → Exp Γ .nat
   | .zero   => zero
   | .succ n => succ (ofNat n)
 
+def Val.ofNat : (n : Nat) → Val (.ofNat n)
+  | .zero   => zero
+  | .succ n => succ (ofNat n)
+
 def Val.toNat {M : Exp _ .nat} : (V : Val M) → Nat
-  | .zero   => .zero
-  | .succ V => .succ (toNat V)
+  | zero   => .zero
+  | succ V => .succ V.toNat
 
 def State (A : Typ) : Type :=
   List Nat × Exp .nil A × List Nat
@@ -309,7 +315,8 @@ def cons (γ : Renaming Γ Γ') (y : Var A Γ) : Renaming Γ (Γ'.cons A)
 def weaken (γ : Renaming Γ Γ') : Renaming (Γ.cons A) (Γ'.cons A) :=
   cons (fun _ x => .succ (γ x)) .zero
 
-mutual -- TODO
+@[structural]
+mutual
 
 def applyV (γ : Renaming Γ Γ') : (V : Val Γ' A) → Val Γ A
   | .var  x     => .var  (γ x)
@@ -337,12 +344,15 @@ end
 
 end Renaming
 
+@[simp]
 def Val.weaken : (V : Val Γ A) → Val (Γ.cons A') A :=
   Renaming.applyV fun _ => .succ
 
+@[simp]
 def Exp.weaken : (M : Exp Γ A) → Exp (Γ.cons A') A :=
   Renaming.applyE fun _ => .succ
 
+@[simp]
 def Exp.weaken₁ : (M : Exp (.cons Γ A') A) → Exp ((Γ.cons A'').cons A') A :=
   Renaming.cons (fun _ x => x.succ.succ) .zero |>.applyE
 
@@ -351,15 +361,19 @@ def Subst (Γ Γ' : Ctx) : Type :=
 
 namespace Subst
 
+@[simp]
 def cons (γ : Subst Γ Γ') (V : Val Γ A) : Subst Γ (Γ'.cons A)
   | _, .zero   => V
   | _, .succ x => γ x
 
+@[simp]
 def weaken (γ : Subst Γ Γ') : Subst (Γ.cons A) (Γ'.cons A) :=
   cons (fun _ x => (γ x).weaken) (.var .zero)
 
-mutual -- TODO
+@[structural]
+mutual
 
+@[simp]
 def applyV (γ : Subst Γ Γ') : (V : Val Γ' A) → Val Γ A
   | .var  x     => γ x
   | .triv       => .triv
@@ -370,6 +384,7 @@ def applyV (γ : Subst Γ Γ') : (V : Val Γ' A) → Val Γ A
   | .zero       => .zero
   | .succ V     => .succ (γ.applyV V)
 
+@[simp]
 def applyE (γ : Subst Γ Γ') : (M : Exp Γ' A) → Exp Γ A
   | .ret    V       => .ret    (γ.applyV V)
   | .let    M M'    => .let    (γ.applyE M) (γ.weaken.applyE M')
@@ -386,6 +401,7 @@ end
 
 end Subst
 
+@[simp]
 def Exp.subst (M : Exp (.cons Γ A') A) (V : Val Γ A') : Exp Γ A :=
   Subst.cons (fun _ => .var) V |>.applyE M
 
@@ -394,8 +410,8 @@ def Val.ofNat : (n : Nat) → Val Γ .nat
   | .succ n => succ (ofNat n)
 
 def Val.toNat : (V : Val .nil .nat) → Nat
-  | .zero   => .zero
-  | .succ V => .succ (toNat V)
+  | zero   => .zero
+  | succ V => .succ V.toNat
 
 def State (A : Typ) : Type :=
   List Nat × Exp .nil A × List Nat
@@ -479,9 +495,17 @@ inductive Reduces : (S S' : State A) → Type
   | refl                                       : Reduces S S
   | step (s : Steps S S') (r : Reduces S' S'') : Reduces S S''
 
-def Reduces.lift {F : (S : State A) → State A'} (f : ∀ {S S'}, (s : Steps S S') → Steps (F S) (F S')) : (r : Reduces S S') → Reduces (F S) (F S')
+namespace Reduces
+
+def trans : (r : Reduces S S') → (r' : Reduces S' S'') → Reduces S S''
+  | refl,     r' => r'
+  | step s r, r' => step s (r.trans r')
+
+def lift {F : (S : State A) → State A'} (f : ∀ {S S'}, (s : Steps S S') → Steps (F S) (F S')) : (r : Reduces S S') → Reduces (F S) (F S')
   | refl     => refl
   | step s r => step (f s) (r.lift f)
+
+end Reduces
 
 end Modal
 
@@ -524,9 +548,9 @@ def translateSteps : (s : CBV.Steps S S') → Σ S'', Modal.Reduces (translateSt
   | .print  s => let ⟨_, r, r'⟩ := translateSteps s; ⟨_, .lift .let₁ r, .lift .let₁ r'⟩
 
   | .pair₁    s₁ => let ⟨_, r₁, r₁'⟩ := translateSteps s₁; ⟨_, .lift .let₁ r₁, .lift .let₁ r₁'⟩
-  | .pair₂ V₁ s₂ => by dsimp [translateState, translateExp]; sorry
+  | .pair₂ V₁ s₂ => let ⟨_, r₂, r₂'⟩ := translateSteps s₂; by dsimp [translateState, translateExp] at r₂ r₂' ⊢; sorry
   | .ap₁      s  => let ⟨_, r, r'⟩ := translateSteps s; ⟨_, .lift .let₁ r, .lift .let₁ r'⟩
-  | .ap₂   V  s₁ => by dsimp [translateState, translateExp]; sorry
+  | .ap₂   V  s₁ => let ⟨_, r₁, r₁'⟩ := translateSteps s₁; by dsimp [translateState, translateExp] at r₁ r₁' ⊢; sorry
 
   | .let'      V     => by dsimp [translateState, translateExp]; sorry
   | .case_inl  V     => by dsimp [translateState, translateExp]; sorry
@@ -538,24 +562,27 @@ def translateSteps : (s : CBV.Steps S S') → Σ S'', Modal.Reduces (translateSt
   | .iter_succ V     => by dsimp [translateState, translateExp]; sorry
 
   | .print' V => by dsimp [translateState, translateExp]; sorry
-  | .read₁    => ⟨_, .step .read₁ .refl, .step .let₂ <| by simp [Modal.Exp.subst, Modal.Subst.applyE, Modal.Subst.applyV, Modal.Subst.cons, Modal.Subst.weaken]; sorry⟩
+  | .read₁    => ⟨_, .step .read₁ .refl, .step .let₂ .refl⟩
   | .read₂    => by dsimp [translateState, translateExp]; sorry
 
 end CBV_to_Modal
 
 namespace CBV_to_Modal'
 
+@[simp]
 def ret? : (M : Modal.Val Γ A ⊕ Modal.Exp Γ A) → Modal.Exp Γ A
   | .inl V => .ret V
   | .inr M => M
 
+@[simp]
 def translateExp : (M : CBV.Exp Γ A) → Modal.Val Γ A ⊕ Modal.Exp Γ A
   | .var x    => .inl (.var x)
   | .let M M' => .inr (.let (ret? (translateExp M)) (ret? (translateExp M')))
 
-  | .absurd M       => match translateExp M with
-                       | .inl V => .inr (.absurd V)
-                       | .inr M => .inr (.let M (.absurd (.var .zero)))
+  | .absurd M       => .inr <|
+                       match translateExp M with
+                       | .inl V => .absurd V
+                       | .inr M => .let M (.absurd (.var .zero))
   | .triv           => .inl .triv
   | .inl    M       => match translateExp M with
                        | .inl V => .inl (.inl V)
@@ -563,70 +590,205 @@ def translateExp : (M : CBV.Exp Γ A) → Modal.Val Γ A ⊕ Modal.Exp Γ A
   | .inr    M       => match translateExp M with
                        | .inl V => .inl (.inr V)
                        | .inr M => .inr (.let M (.ret (.inr (.var .zero))))
-  | .case   M M₁ M₂ => match translateExp M with
-                       | .inl V => .inr (.case V (ret? (translateExp M₁)) (ret? (translateExp M₂)))
-                       | .inr M => .inr (.let M (.case (.var .zero) (ret? (translateExp M₁)).weaken₁ (ret? (translateExp M₂)).weaken₁))
+  | .case   M M₁ M₂ => .inr <|
+                       match translateExp M with
+                       | .inl V => .case V (ret? (translateExp M₁)) (ret? (translateExp M₂))
+                       | .inr M => .let M (.case (.var .zero) (ret? (translateExp M₁)).weaken₁ (ret? (translateExp M₂)).weaken₁)
   | .pair   M₁ M₂   => match translateExp M₁, translateExp M₂ with
                        | .inl V₁, .inl V₂ => .inl (.pair V₁ V₂)
                        | .inr M₁, .inl V₂ => .inr (.let M₁ (.ret (.pair (.var .zero) V₂.weaken)))
                        | .inl V₁, .inr M₂ => .inr (.let M₂ (.ret (.pair V₁.weaken (.var .zero))))
                        | .inr M₁, .inr M₂ => .inr (.let M₁ (.let M₂.weaken (.ret (.pair (.var (.succ .zero)) (.var .zero)))))
-  | .fst    M       => match translateExp M with
-                       | .inl V => .inr (.fst V)
-                       | .inr M => .inr (.let M (.fst (.var .zero)))
-  | .snd    M       => match translateExp M with
-                       | .inl V => .inr (.snd V)
-                       | .inr M => .inr (.let M (.snd (.var .zero)))
+  | .fst    M       => .inr <|
+                       match translateExp M with
+                       | .inl V => .fst V
+                       | .inr M => .let M (.fst (.var .zero))
+  | .snd    M       => .inr <|
+                       match translateExp M with
+                       | .inl V => .snd V
+                       | .inr M => .let M (.snd (.var .zero))
   | .lam    M       => .inl (.lam (ret? (translateExp M)))
-  | .ap     M₁ M₂   => match translateExp M₁, translateExp M₂ with
-                       | .inl V₁, .inl V₂ => .inr (.ap V₁ V₂)
-                       | .inr M₁, .inl V₂ => .inr (.let M₁ (.ap (.var .zero) V₂.weaken))
-                       | .inl V₁, .inr M₂ => .inr (.let M₂ (.ap V₁.weaken (.var .zero)))
-                       | .inr M₁, .inr M₂ => .inr (.let M₁ (.let M₂.weaken (.ap (.var (.succ .zero)) (.var .zero))))
+  | .ap     M M₁    => .inr <|
+                       match translateExp M, translateExp M₁ with
+                       | .inl V, .inl V₁ => .ap V V₁
+                       | .inr M, .inl V₁ => .let M (.ap (.var .zero) V₁.weaken)
+                       | .inl V, .inr M₁ => .let M₁ (.ap V.weaken (.var .zero))
+                       | .inr M, .inr M₁ => .let M (.let M₁.weaken (.ap (.var (.succ .zero)) (.var .zero)))
   | .zero           => .inl .zero
   | .succ   M       => match translateExp M with
                        | .inl V => .inl (.succ V)
                        | .inr M => .inr (.let M (.ret (.succ (.var .zero))))
-  | .iter   M M₁ M₂ => match translateExp M with
-                       | .inl V => .inr (.iter V (ret? (translateExp M₁)) (ret? (translateExp M₂)))
-                       | .inr M => .inr (.let M (.iter (.var .zero) (ret? (translateExp M₁)).weaken (ret? (translateExp M₂)).weaken₁))
+  | .iter   M M₁ M₂ => .inr <|
+                       match translateExp M with
+                       | .inl V => .iter V (ret? (translateExp M₁)) (ret? (translateExp M₂))
+                       | .inr M => .let M (.iter (.var .zero) (ret? (translateExp M₁)).weaken (ret? (translateExp M₂)).weaken₁)
 
-  | .print M => match translateExp M with
-                | .inl V => .inr (.print V)
-                | .inr M => .inr (.let M (.print (.var .zero)))
+  | .print M => .inr <|
+                match translateExp M with
+                | .inl V => .print V
+                | .inr M => .let M (.print (.var .zero))
   | .read    => .inr .read
 
+def translateVal : (V : CBV.Val M) → { V // translateExp M = .inl V }
+  | .triv       => ⟨_, rfl⟩
+  | .inl  V     => ⟨_, by rw [translateExp, (translateVal V).property]⟩
+  | .inr  V     => ⟨_, by rw [translateExp, (translateVal V).property]⟩
+  | .pair V₁ V₂ => ⟨_, by rw [translateExp, (translateVal V₁).property, (translateVal V₂).property]⟩
+  | .lam        => ⟨_, rfl⟩
+  | .zero       => ⟨_, rfl⟩
+  | .succ V     => ⟨_, by rw [translateExp, (translateVal V).property]⟩
+
+def ofTranslateVal (eq : translateExp M = .inl V) : CBV.Val M :=
+  match M with
+  | .triv       => .triv
+  | .inl  M     => match h : translateExp M with
+                   | .inl V => .inl (ofTranslateVal h)
+                   | .inr M => by rw [translateExp, h] at eq; nomatch eq
+  | .inr  M     => match h : translateExp M with
+                   | .inl V => .inr (ofTranslateVal h)
+                   | .inr M => by rw [translateExp, h] at eq; nomatch eq
+  | .pair M₁ M₂ => match h₁ : translateExp M₁, h₂ : translateExp M₂ with
+                   | .inl V₁, .inl V₂ => .pair (ofTranslateVal h₁) (ofTranslateVal h₂)
+                   | .inr M₁, .inl V₂ | .inl V₁, .inr M₂ | .inr M₁, .inr M₂ => by rw [translateExp, h₁, h₂] at eq; nomatch eq
+  | .lam  M     => .lam
+  | .zero       => .zero
+  | .succ M     => match h : translateExp M with
+                   | .inl V => .succ (ofTranslateVal h)
+                   | .inr M => by rw [translateExp, h] at eq; nomatch eq
+
+@[simp]
 def translateState : (S : CBV.State A) → Modal.State A
   | (I, M, O) => (I, ret? (translateExp M), O)
 
 def translateSteps : (s : CBV.Steps S S') → Modal.Reduces (translateState S) (translateState S')
-  | .let    s => by dsimp [translateState, translateExp]; sorry
-  | .absurd s => have := translateSteps s; by dsimp [translateState, translateExp] at this ⊢; sorry
-  | .inl    s => by dsimp [translateState, translateExp]; sorry
-  | .inr    s => by dsimp [translateState, translateExp]; sorry
-  | .case   s => by dsimp [translateState, translateExp]; sorry
-  | .fst    s => by dsimp [translateState, translateExp]; sorry
-  | .snd    s => by dsimp [translateState, translateExp]; sorry
-  | .succ   s => by dsimp [translateState, translateExp]; sorry
-  | .iter   s => by dsimp [translateState, translateExp]; sorry
-  | .print  s => by dsimp [translateState, translateExp]; sorry
+  | .let    s => .lift .let₁ <| translateSteps s
+  | .absurd s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
+  | .inl    s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next =>
+                     split at this
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
+  | .inr    s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next =>
+                     split at this
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
+  | .case   s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ <| by dsimp; simp; exact .refl)
+                     . exact .lift .let₁ this
+  | .fst    s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
+  | .snd    s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
+  | .succ   s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
+  | .iter   s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ <| by dsimp; simp; exact .refl)
+                     . exact .lift .let₁ this
+  | .print  s => by
+                   have := translateSteps s
+                   dsimp at this ⊢
+                   split at this
+                   next h => nomatch flip CBV.Final.not_steps s (ofTranslateVal h)
+                   next h =>
+                     rw [h]
+                     split at this <;> rename_i h <;> rw [h]
+                     . exact .trans (.lift .let₁ this) (.step .let₂ .refl)
+                     . exact .lift .let₁ this
 
-  | .pair₁    s₁ => by dsimp [translateState, translateExp]; sorry
-  | .pair₂ V₁ s₂ => by dsimp [translateState, translateExp]; sorry
-  | .ap₁      s  => by dsimp [translateState, translateExp]; sorry
-  | .ap₂   V  s₁ => by dsimp [translateState, translateExp]; sorry
+  | .pair₁    s₁ => by
+                      have := translateSteps s₁
+                      dsimp at this ⊢
+                      split <;> rename_i h <;> split at h <;> cases h
+                      next h _ => nomatch flip CBV.Final.not_steps s₁ (ofTranslateVal h)
+                      next h h' =>
+                        rw [h] at this
+                        rw [h']
+                        split <;> rename_i h <;> split at h <;> cases h <;> rename_i h <;> cases h <;> rename_i h <;> rw [h] at this
+                        . dsimp at this ⊢
+                          exact .trans (.lift .let₁ this) (.step .let₂ <| by dsimp; simp; exact .refl)
+                        . exact .lift .let₁ this
+                      next h _ => nomatch flip CBV.Final.not_steps s₁ (ofTranslateVal h)
+                      next h h' =>
+                        rw [h] at this
+                        rw [h']
+                        split <;> rename_i h <;> split at h <;> cases h <;> rename_i h <;> cases h <;> rename_i h <;> rw [h] at this
+                        . dsimp at this ⊢
+                          exact .trans (.lift .let₁ this) (.step .let₂ <| by dsimp; simp; exact .refl)
+                        . exact .lift .let₁ this
+  | .pair₂ V₁ s₂ => by dsimp; sorry
+  | .ap₁      s  => by
+                      have := translateSteps s
+                      dsimp at this ⊢
+                      sorry
+  | .ap₂   V  s₁ => by dsimp; sorry
 
-  | .let'      V     => by dsimp [translateState, translateExp]; sorry
-  | .case_inl  V     => by dsimp [translateState, translateExp]; sorry
-  | .case_inr  V     => by dsimp [translateState, translateExp]; sorry
-  | .fst_pair  V₁ V₂ => by dsimp [translateState, translateExp]; sorry
-  | .snd_pair  V₁ V₂ => by dsimp [translateState, translateExp]; sorry
-  | .ap_lam    V₁    => by dsimp [translateState, translateExp]; sorry
-  | .iter_zero       => by dsimp [translateState, translateExp]; sorry
-  | .iter_succ V     => by dsimp [translateState, translateExp]; sorry
+  | .let'      V     => by dsimp; sorry
+  | .case_inl  V     => by dsimp; sorry
+  | .case_inr  V     => by dsimp; sorry
+  | .fst_pair  V₁ V₂ => by dsimp; sorry
+  | .snd_pair  V₁ V₂ => by dsimp; sorry
+  | .ap_lam    V₁    => by dsimp; sorry
+  | .iter_zero       => by dsimp; sorry
+  | .iter_succ V     => by dsimp; sorry
 
-  | .print' V => by dsimp [translateState, translateExp]; sorry
-  | .read₁    => by dsimp [translateState, translateExp]; sorry
-  | .read₂    => by dsimp [translateState, translateExp]; sorry
+  | .print' V => by dsimp; sorry
+  | .read₁    => .step .read₁ .refl
+  | .read₂    => by dsimp; sorry
 
 end CBV_to_Modal'
