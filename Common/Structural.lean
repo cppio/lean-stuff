@@ -98,6 +98,7 @@ elab tk:"@[structural]" fns:Command.mutual : command => withRef tk do
       let lhs ← instantiateMVars lhs
 
       let mvars := lhs.collectMVars {} |>.result
+      _ ← setMVarUserNamesAt lhs <| mvars.map .mvar
       let extraFields ← mvars.mapM fun mvar => do
         let decl ← mvar.getDecl
         return (decl.userName, fun _ => return decl.type)
