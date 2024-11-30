@@ -1,5 +1,9 @@
+namespace Logic.Propositional.Structural.Intuitionistic
+
+opaque BasePropn : Type
+
 inductive Propn
-  | base (P : Nat)
+  | base (P : BasePropn)
   | true
   | false
   | and (A B : Propn)
@@ -12,14 +16,36 @@ inductive Ctx
 
 def Ctx.append (Γ : Ctx) : (Γ' : Ctx) → Ctx
   | nil => Γ
-  | cons Γ' A => cons (Γ.append Γ') A
+  | cons Γ' A => (Γ.append Γ').cons A
 
 inductive Mem (A : Propn) : (Γ : Ctx) → Type
   | here : Mem A (.cons Γ A)
   | there (u : Mem A Γ) : Mem A (Γ.cons B)
 
-def Rename (Γ Γ' : Ctx) : Type :=
-  ∀ A, (u : Mem A Γ) → Mem A Γ'
+class Judge (J : (Γ : Ctx) → (A : Propn) → Type) where
+  hyp (u : Mem A Γ) : J Γ A
+  weaken (D : J Γ A) : J (Γ.cons B) A
+
+instance Mem.instJudge : Judge (fun Γ A => Mem A Γ) where
+  hyp u := u
+  weaken := there
+
+def Subst (J : (Γ : Ctx) → (A : Propn) → Type) (Γ Γ' : Ctx) : Type :=
+  ∀ ⦃A⦄, (u : Mem A Γ) → J Γ' A
+
+def Subst.cons [Judge J] (γ : Subst J Γ Γ') {A} : Subst J (Γ.cons A) (Γ'.cons A)
+  | _, .here => Judge.hyp .here
+  | _, .there u => Judge.weaken (γ u)
+
+def Subst.mk [Judge J] (D : J Γ A) : Subst J (Γ.cons A) Γ
+  | _, .here => D
+  | _, .there u => Judge.hyp u
+
+def Subst.map (f : ∀ {Γ A}, J Γ A → J' Γ A) {Γ Γ'} (γ : Subst J Γ Γ') : Subst J' Γ Γ'
+  | _, u => f (γ u)
+
+def Rename : (Γ Γ' : Ctx) → Type :=
+  Subst fun Γ A => Mem A Γ
 
 def Rename.id : Rename Γ Γ
   | _, u => u
@@ -36,17 +62,13 @@ def Rename.exchange : Rename (Ctx.cons Γ A |>.cons B) (Γ.cons B |>.cons A)
   | _, .there .here => .here
   | _, .there (.there u) => u.there.there
 
-def Rename.cons (γ : Rename Γ Γ') {A} : Rename (Γ.cons A) (Γ'.cons A)
-  | _, .here => .here
-  | A, .there u => (γ A u).there
-
 def Rename.append₁ : ∀ {Γ'}, Rename Γ (Γ.append Γ')
   | .nil, _, u => u
-  | .cons .., A, u => (append₁ A u).there
+  | .cons .., _, u => (append₁ u).there
 
 def Rename.append₂ : Rename Γ' (.append Γ Γ')
   | _, .here => .here
-  | A, .there u => (append₂ A u).there
+  | _, .there u => (append₂ u).there
 
 -- Natural Deduction
 namespace ND
@@ -65,7 +87,7 @@ inductive True : (Γ : Ctx) → (A : Propn) → Type
   | impE (D : True Γ (A.imp B)) (D₁ : True Γ A) : True Γ B
 
 def True.rename (γ : Rename Γ Γ') {A} : (D : True Γ A) → True Γ' A
-  | hyp u => hyp (γ A u)
+  | hyp u => hyp (γ u)
   | trueI => trueI
   | falseE D => falseE (D.rename γ)
   | andI D₁ D₂ => andI (D₁.rename γ) (D₂.rename γ)
@@ -77,15 +99,12 @@ def True.rename (γ : Rename Γ Γ') {A} : (D : True Γ A) → True Γ' A
   | impI D => impI (D.rename γ.cons)
   | impE D D₁ => impE (D.rename γ) (D₁.rename γ)
 
-def Subst (Γ Γ' : Ctx) : Type :=
-  ∀ A, (u : Mem A Γ) → True Γ' A
+instance True.instJudge : Judge True where
+  hyp := hyp
+  weaken := rename .weakening
 
-def Subst.cons (γ : Subst Γ Γ') {A} : Subst (Γ.cons A) (Γ'.cons A)
-  | _, .here => .hyp .here
-  | A, .there u => (γ A u).rename .weakening
-
-def True.subst (γ : Subst Γ Γ') {A} : (D : True Γ A) → True Γ' A
-  | hyp u => γ A u
+def True.subst (γ : Subst True Γ Γ') {A} : (D : True Γ A) → True Γ' A
+  | hyp u => γ u
   | trueI => trueI
   | falseE D => falseE (D.subst γ)
   | andI D₁ D₂ => andI (D₁.subst γ) (D₂.subst γ)
@@ -135,27 +154,20 @@ def Verif.rename (γ : Rename Γ Γ') {A} : (D : Verif Γ A) → Verif Γ' A
   | .impI D => .impI (D.rename γ.cons)
 
 def Use.rename (γ : Rename Γ Γ') {A} : (D : Use Γ A) → Use Γ' A
-  | .hyp u => .hyp (γ A u)
+  | .hyp u => .hyp (γ u)
   | .andE₁ D => .andE₁ (D.rename γ)
   | .andE₂ D => .andE₂ (D.rename γ)
   | .impE D D₁ => .impE (D.rename γ) (D₁.rename γ)
 
 end
 
-def Subst (Γ Γ' : Ctx) : Type :=
-  ∀ A, (u : Mem A Γ) → Use Γ' A
-
-def Subst.mk (D : Use Γ A) : Subst (Γ.cons A) Γ
-  | _, .here => D
-  | _, .there u => .hyp u
-
-def Subst.cons (γ : Subst Γ Γ') {A} : Subst (Γ.cons A) (Γ'.cons A)
-  | _, .here => .hyp .here
-  | A, .there u => (γ A u).rename .weakening
+instance Use.instJudge : Judge Use where
+  hyp := hyp
+  weaken := rename .weakening
 
 mutual
 
-def Verif.subst (γ : Subst Γ Γ') {A} : (D : Verif Γ A) → Verif Γ' A
+def Verif.subst (γ : Subst Use Γ Γ') {A} : (D : Verif Γ A) → Verif Γ' A
   | .uv D => .uv (D.subst γ)
   | .trueI => .trueI
   | .falseE D => .falseE (D.subst γ)
@@ -165,8 +177,8 @@ def Verif.subst (γ : Subst Γ Γ') {A} : (D : Verif Γ A) → Verif Γ' A
   | .orE D D₁ D₂ => .orE (D.subst γ) (D₁.subst γ.cons) (D₂.subst γ.cons)
   | .impI D => .impI (D.subst γ.cons)
 
-def Use.subst (γ : Subst Γ Γ') {A} : (D : Use Γ A) → Use Γ' A
-  | .hyp u => γ A u
+def Use.subst (γ : Subst Use Γ Γ') {A} : (D : Use Γ A) → Use Γ' A
+  | .hyp u => γ u
   | .andE₁ D => .andE₁ (D.subst γ)
   | .andE₂ D => .andE₂ (D.subst γ)
   | .impE D D₁ => .impE (D.subst γ) (D₁.subst γ)
@@ -181,13 +193,6 @@ def Verif.uv' (D : Use Γ A) : Verif Γ A :=
   | .and .. => andI (uv' (.andE₁ D)) (uv' (.andE₂ D))
   | .or .. => orE D (orI₁ (uv' (.hyp .here))) (orI₂ (uv' (.hyp .here)))
   | .imp .. => impI (uv' (.impE (D.rename .weakening) (uv' (.hyp .here))))
-
-def Subst' (Γ Γ' : Ctx) : Type :=
-  ∀ A, (u : Mem A Γ) → Verif Γ' A
-
-def Subst'.cons (γ : Subst' Γ Γ') {A} : Subst' (Γ.cons A) (Γ'.cons A)
-  | _, .here => .uv' (.hyp .here)
-  | A, .there u => (γ A u).rename .weakening
 
 mutual
 
@@ -209,12 +214,6 @@ def Use.toTrue : (D : Use Γ A) → ND.True Γ A
 
 end
 
-def Subst.toTrue (γ : Subst Γ Γ') : ND.Subst Γ Γ'
-  | A, u => (γ A u).toTrue
-
-def Subst'.toTrue (γ : Subst' Γ Γ') : ND.Subst Γ Γ'
-  | A, u => (γ A u).toTrue
-
 end VU
 
 -- Sequent Calculus
@@ -234,17 +233,17 @@ inductive Seq : (Γ : Ctx) → (A : Propn) → Type
   | impL (u : Mem (A.imp B) Γ) (D₁ : Seq Γ A) (D₂ : Seq (Γ.cons B) C) : Seq Γ C
 
 def Seq.rename (γ : Rename Γ Γ') {A} : (D : Seq Γ A) → Seq Γ' A
-  | id u => id (γ _ u)
+  | id u => id (γ u)
   | trueR => trueR
-  | falseL u => falseL (γ _ u)
+  | falseL u => falseL (γ u)
   | andR D₁ D₂ => andR (D₁.rename γ) (D₂.rename γ)
-  | andL₁ u D => andL₁ (γ _ u) (D.rename γ.cons)
-  | andL₂ u D => andL₂ (γ _ u) (D.rename γ.cons)
+  | andL₁ u D => andL₁ (γ u) (D.rename γ.cons)
+  | andL₂ u D => andL₂ (γ u) (D.rename γ.cons)
   | orR₁ D => orR₁ (D.rename γ)
   | orR₂ D => orR₂ (D.rename γ)
-  | orL u D₁ D₂ => orL (γ _ u) (D₁.rename γ.cons) (D₂.rename γ.cons)
+  | orL u D₁ D₂ => orL (γ u) (D₁.rename γ.cons) (D₂.rename γ.cons)
   | impR D => impR (D.rename γ.cons)
-  | impL u D₁ D₂ => impL (γ _ u) (D₁.rename γ) (D₂.rename γ.cons)
+  | impL u D₁ D₂ => impL (γ u) (D₁.rename γ) (D₂.rename γ.cons)
 
 def Seq.id' (u : Mem A Γ) : Seq Γ A :=
   match A with
@@ -257,21 +256,13 @@ def Seq.id' (u : Mem A Γ) : Seq Γ A :=
 
 @[simp]
 def Seq.sizeOf : (D : Seq Γ A) → Nat
-  | id _ => 0
-  | trueR => 0
-  | falseL _ => 0
-  | andR D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
-  | andL₁ _ D => D.sizeOf + 1
-  | andL₂ _ D => D.sizeOf + 1
-  | orR₁ D => D.sizeOf + 1
-  | orR₂ D => D.sizeOf + 1
-  | orL _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
-  | impR D => D.sizeOf + 1
-  | impL _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
+  | id _ | trueR | falseL _ => 0
+  | andL₁ _ D | andL₂ _ D | orR₁ D | orR₂ D | impR D => D.sizeOf + 1
+  | andR D₁ D₂ | orL _ D₁ D₂ | impL _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
 
 @[simp]
 theorem Seq.sizeOf_rename {γ : Rename Γ Γ'} (D : Seq Γ A) : (D.rename γ).sizeOf = D.sizeOf :=
-  by induction D generalizing Γ' <;> simp [*]
+  by induction D generalizing Γ' <;> simp! only [*]
 
 def Seq.cut : (D : Seq Γ A) → (E : Seq (Γ.cons A) C) → Seq Γ C
   | id u, E => E.rename (.contraction u)
@@ -283,10 +274,10 @@ def Seq.cut : (D : Seq Γ A) → (E : Seq (Γ.cons A) C) → Seq Γ C
   | D@(orR₂ D₂), orL .here _ E₂ => cut D₂ (cut (D.rename .weakening) (E₂.rename .exchange))
   | D@(impR D₂), impL .here E₁ E₂ => cut (cut (cut D E₁) D₂) (cut (D.rename .weakening) (E₂.rename .exchange))
   | falseL u, _ => falseL u
-  | andL₁ u D, E => andL₁ u (cut D (E.rename (.cons .weakening)))
-  | andL₂ u D, E => andL₂ u (cut D (E.rename (.cons .weakening)))
-  | orL u D₁ D₂, E => orL u (cut D₁ (E.rename (.cons .weakening))) (cut D₂ (E.rename (.cons .weakening)))
-  | impL u D₁ D₂, E => impL u D₁ (cut D₂ (E.rename (.cons .weakening)))
+  | andL₁ u D, E => andL₁ u (cut D (E.rename Rename.weakening.cons))
+  | andL₂ u D, E => andL₂ u (cut D (E.rename Rename.weakening.cons))
+  | orL u D₁ D₂, E => orL u (cut D₁ (E.rename Rename.weakening.cons)) (cut D₂ (E.rename Rename.weakening.cons))
+  | impL u D₁ D₂, E => impL u D₁ (cut D₂ (E.rename Rename.weakening.cons))
   | _, trueR => trueR
   | _, falseL (.there u) => falseL u
   | D, andR E₁ E₂ => andR (cut D E₁) (cut D E₂)
@@ -300,15 +291,12 @@ def Seq.cut : (D : Seq Γ A) → (E : Seq (Γ.cons A) C) → Seq Γ C
   termination_by D E => (A, D.sizeOf, E.sizeOf)
   decreasing_by all_goals subst_vars; decreasing_tactic
 
-def Subst (Γ Γ' : Ctx) : Type :=
-  ∀ A, (u : Mem A Γ) → Seq Γ' A
-
-def Seq.multicut (γ : Subst Γ Γ') {A} (D : Seq (Γ'.append Γ) A) : Seq Γ' A :=
+def Seq.multicut (γ : Subst Seq Γ Γ') {A} (D : Seq (Γ'.append Γ) A) : Seq Γ' A :=
   match Γ with
   | .nil => D
-  | .cons _ A => multicut (fun A u => γ A u.there) (cut ((γ A .here).rename .append₁) D)
+  | .cons .. => multicut (fun _ u => γ u.there) (cut ((γ .here).rename .append₁) D)
 
-def Seq.subst (γ : Subst Γ Γ') {A} (D : Seq Γ A) : Seq Γ' A :=
+def Seq.subst (γ : Subst Seq Γ Γ') {A} (D : Seq Γ A) : Seq Γ' A :=
   multicut γ (D.rename .append₂)
 
 def Seq.toVerif : (D : Seq Γ A) → VU.Verif Γ A
@@ -324,9 +312,6 @@ def Seq.toVerif : (D : Seq Γ A) → VU.Verif Γ A
   | impR D => .impI D.toVerif
   | impL u D₁ D₂ => D₂.toVerif.subst (.mk (.impE (.hyp u) D₁.toVerif))
 
-def Subst.toVerif (γ : Subst Γ Γ') : VU.Subst' Γ Γ'
-  | A, u => (γ A u).toVerif
-
 end SC
 
 def ND.True.toSeq : (D : True Γ A) → SC.Seq Γ A
@@ -338,103 +323,9 @@ def ND.True.toSeq : (D : True Γ A) → SC.Seq Γ A
   | andE₂ D => .cut D.toSeq (.andL₂ .here (.id' .here))
   | orI₁ D => .orR₁ D.toSeq
   | orI₂ D => .orR₂ D.toSeq
-  | orE D D₁ D₂ => .cut D.toSeq (.orL .here (D₁.toSeq.rename (.cons .weakening)) (D₂.toSeq.rename (.cons .weakening)))
+  | orE D D₁ D₂ => .cut D.toSeq (.orL .here (D₁.toSeq.rename Rename.weakening.cons) (D₂.toSeq.rename Rename.weakening.cons))
   | impI D => .impR D.toSeq
   | impE D D₁ => .cut D.toSeq (.impL .here (D₁.toSeq.rename .weakening) (.id' .here))
 
-def ND.Subst.toSeq (γ : Subst Γ Γ') : SC.Subst Γ Γ'
-  | A, u => (γ A u).toSeq
-
-def VU.Verif.subst' (γ : Subst' Γ Γ') {A} (D : Verif Γ A) : Verif Γ' A :=
-  (D.toTrue.toSeq.subst γ.toTrue.toSeq).toVerif
-
--- Classical Sequent Calculus
-namespace CSC
-
-inductive Seq : (Γ : Ctx) → (Δ : Ctx) → Type
-  | id (u : Mem (.base P) Γ) (v : Mem (.base P) Δ) : Seq Γ Δ
-  | trueR (v : Mem .true Δ) : Seq Γ Δ
-  | falseL (u : Mem .false Γ) : Seq Γ Δ
-  | andR (v : Mem (A.and B) Δ) (D₁ : Seq Γ (Δ.cons A)) (D₂ : Seq Γ (Δ.cons B)) : Seq Γ Δ
-  | andL₁ (u : Mem (A.and B) Γ) (D : Seq (Γ.cons A) Δ) : Seq Γ Δ
-  | andL₂ (u : Mem (.and A B) Γ) (D : Seq (Γ.cons B) Δ) : Seq Γ Δ
-  | orR₁ (v : Mem (A.or B) Δ) (D : Seq Γ (Δ.cons A)) : Seq Γ Δ
-  | orR₂ (v : Mem (.or A B) Δ) (D : Seq Γ (Δ.cons B)) : Seq Γ Δ
-  | orL (u : Mem (A.or B) Γ) (D₁ : Seq (Γ.cons A) Δ) (D₂ : Seq (Γ.cons B) Δ) : Seq Γ Δ
-  | impR (v : Mem (A.imp B) Δ) (D : Seq (Γ.cons A) (Δ.cons B)) : Seq Γ Δ
-  | impL (u : Mem (A.imp B) Γ) (D₁ : Seq Γ (Δ.cons A)) (D₂ : Seq (Γ.cons B) Δ) : Seq Γ Δ
-
-def Seq.rename (γ : Rename Γ Γ') (δ : Rename Δ Δ') : (D : Seq Γ Δ) → Seq Γ' Δ'
-  | id u v => id (γ _ u) (δ _ v)
-  | trueR v => trueR (δ _ v)
-  | falseL u => falseL (γ _ u)
-  | andR v D₁ D₂ => andR (δ _ v) (D₁.rename γ δ.cons) (D₂.rename γ δ.cons)
-  | andL₁ u D => andL₁ (γ _ u) (D.rename γ.cons δ)
-  | andL₂ u D => andL₂ (γ _ u) (D.rename γ.cons δ)
-  | orR₁ v D => orR₁ (δ _ v) (D.rename γ δ.cons)
-  | orR₂ v D => orR₂ (δ _ v) (D.rename γ δ.cons)
-  | orL u D₁ D₂ => orL (γ _ u) (D₁.rename γ.cons δ) (D₂.rename γ.cons δ)
-  | impR v D => impR (δ _ v) (D.rename γ.cons δ.cons)
-  | impL u D₁ D₂ => impL (γ _ u) (D₁.rename γ δ.cons) (D₂.rename γ.cons δ)
-
-def Seq.id' (u : Mem A Γ) (v : Mem A Δ) : Seq Γ Δ :=
-  match A with
-  | .base _ => id u v
-  | .true => trueR v
-  | .false => falseL u
-  | .and .. => andR v (andL₁ u (id' .here .here)) (andL₂ u (id' .here .here))
-  | .or .. => orL u (orR₁ v (id' .here .here)) (orR₂ v (id' .here .here))
-  | .imp .. => impR v (impL u.there (id' .here .here) (id' .here .here))
-
-@[simp]
-def Seq.sizeOf : (D : Seq Γ A) → Nat
-  | id .. => 0
-  | trueR _ => 0
-  | falseL _ => 0
-  | andR _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
-  | andL₁ _ D => D.sizeOf + 1
-  | andL₂ _ D => D.sizeOf + 1
-  | orR₁ _ D => D.sizeOf + 1
-  | orR₂ _ D => D.sizeOf + 1
-  | orL _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
-  | impR _ D => D.sizeOf + 1
-  | impL _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
-
-@[simp]
-theorem Seq.sizeOf_rename {γ : Rename Γ Γ'} {δ : Rename Δ Δ'} (D : Seq Γ Δ) : (D.rename γ δ).sizeOf = D.sizeOf :=
-  by induction D generalizing Γ' Δ' <;> simp [*]
-
-def Seq.cut : (D : Seq Γ (Δ.cons A)) → (E : Seq (Γ.cons A) Δ) → Seq Γ Δ
-  | .id u .here, E => E.rename (.contraction u) .id
-  | .id u (.there v), _ => .id u v
-  | D, .id .here v => D.rename .id (.contraction v)
-  | _, .id (.there u) v => .id u v
-  | D@(andR .here D₁ _), E@(andL₁ .here E₁) => cut (cut (D₁.rename .id .exchange) (E.rename .id .weakening)) (cut (D.rename .weakening .id) (E₁.rename .exchange .id))
-  | D@(andR .here _ D₂), E@(andL₂ .here E₂) => cut (cut (D₂.rename .id .exchange) (E.rename .id .weakening)) (cut (D.rename .weakening .id) (E₂.rename .exchange .id))
-  | D@(orR₁ .here D₁), E@(orL .here E₁ _) => cut (cut (D₁.rename .id .exchange) (E.rename .id .weakening)) (cut (D.rename .weakening .id) (E₁.rename .exchange .id))
-  | D@(orR₂ .here D₂), E@(orL .here _ E₂) => cut (cut (D₂.rename .id .exchange) (E.rename .id .weakening)) (cut (D.rename .weakening .id) (E₂.rename .exchange .id))
-  | D@(impR .here D₁), E@(impL .here E₁ E₂) => cut (cut (D.rename .id (.cons .weakening)) (E₁.rename .id .id)) (cut (cut (D₁.rename .id .exchange) (E.rename (.cons .weakening) .weakening)) ((cut (D.rename .weakening .id) (E₂.rename .exchange .id)).rename (.cons .weakening) .id))
-  | trueR (.there v), _ => trueR v
-  | falseL u, _ => falseL u
-  | andR (.there v) D₁ D₂, E => andR v (cut (D₁.rename .id .exchange) (E.rename .id .weakening)) (cut (D₂.rename .id .exchange) (E.rename .id .weakening))
-  | andL₁ u D, E => andL₁ u (cut D (E.rename (.cons .weakening) .id))
-  | andL₂ u D, E => andL₂ u (cut D (E.rename (.cons .weakening) .id))
-  | orR₁ (.there v) D, E => orR₁ v (cut (D.rename .id .exchange) (E.rename .id .weakening))
-  | orR₂ (.there v) D, E => orR₂ v (cut (D.rename .id .exchange) (E.rename .id .weakening))
-  | orL u D₁ D₂, E => orL u (cut D₁ (E.rename (.cons .weakening) .id)) (cut D₂ (E.rename (.cons .weakening) .id))
-  | impR (.there v) D, E => impR v (cut (D.rename .id .exchange) (E.rename (.cons .weakening) .weakening))
-  | impL u D₁ D₂, E => impL u (cut (D₁.rename .id .exchange) (E.rename .id .weakening)) (cut D₂ (E.rename (.cons .weakening) .id))
-  | _, trueR v => trueR v
-  | _, falseL (.there u) => falseL u
-  | D, andR v E₁ E₂ => andR v (cut (D.rename .id (.cons .weakening)) E₁) (cut (D.rename .id (.cons .weakening)) E₂)
-  | D, andL₁ (.there u) E => andL₁ u (cut (D.rename .weakening .id) (E.rename .exchange .id))
-  | D, andL₂ (.there u) E => andL₂ u (cut (D.rename .weakening .id) (E.rename .exchange .id))
-  | D, orR₁ v E => orR₁ v (cut (D.rename .id (.cons .weakening)) E)
-  | D, orR₂ v E => orR₂ v (cut (D.rename .id (.cons .weakening)) E)
-  | D, orL (.there u) E₁ E₂ => orL u (cut (D.rename .weakening .id) (E₁.rename .exchange .id)) (cut (D.rename .weakening .id) (E₂.rename .exchange .id))
-  | D, impR v E => impR v (cut (D.rename .weakening (.cons .weakening)) (E.rename .exchange .id))
-  | D, impL (.there u) E₁ E₂ => impL u (cut (D.rename .id (.cons .weakening)) E₁) (cut (D.rename .weakening .id) (E₂.rename .exchange .id))
-  termination_by D E => (A, D.sizeOf, E.sizeOf)
-  decreasing_by all_goals subst_vars; decreasing_tactic
-
-end CSC
+def VU.Verif.subst' (γ : Subst Verif Γ Γ') {A} (D : Verif Γ A) : Verif Γ' A :=
+  (D.toTrue.toSeq.subst (γ.map fun D => D.toTrue.toSeq)).toVerif
