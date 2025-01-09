@@ -1,3 +1,7 @@
+import Logic.Propositional.Structural
+
+namespace Logic.Propositional.Structural.Intuitionistic
+
 opaque BasePropn : Type
 
 inductive Propn
@@ -8,50 +12,7 @@ inductive Propn
   | or (A B : Propn)
   | imp (A B : Propn)
 
-inductive Ctx
-  | nil
-  | cons (Γ : Ctx) (A : Propn)
-
-inductive Hyp : (Γ : Ctx) → (A : Propn) → Type
-  | here : Hyp (.cons Γ A) A
-  | there (u : Hyp Γ A) : Hyp (Γ.cons B) A
-
-def Subst (J : (Γ : Ctx) → (A : Propn) → Type) (Γ Γ' : Ctx) : Type :=
-  ∀ ⦃A⦄, (u : Hyp Γ A) → J Γ' A
-
-def Subst.weakening : Subst Hyp Γ (Γ.cons A)
-  | _ => .there
-
-def Subst.exchange : Subst Hyp (Ctx.cons Γ A |>.cons B) (Γ.cons B |>.cons A)
-  | _, .here => .there .here
-  | _, .there .here => .here
-  | _, .there (.there u) => u.there.there
-
-class JudgeTrans (J J' : (Γ : Ctx) → (A : Propn) → Type) where
-  transform (D : J Γ A) : J' Γ A
-
-instance JudgeTrans.id : JudgeTrans J J where
-  transform D := D
-
-def Subst.mk [j : JudgeTrans Hyp J] {Γ A} (D : J Γ A) : Subst J (Γ.cons A) Γ
-  | _, .here => D
-  | _, .there u => j.transform u
-
-def Subst.map (jt : JudgeTrans J J') {Γ Γ'} (γ : Subst J Γ Γ') : Subst J' Γ Γ'
-  | _, u => jt.transform (γ u)
-
-class Judge (J) extends JudgeTrans Hyp J where
-  rename (γ : Subst Hyp Γ Γ') {A} (D : J Γ A) : J Γ' A
-
-instance Hyp.judge : Judge Hyp where
-  rename γ := @γ
-
-def Subst.weaken [j : Judge J] {Γ Γ'} (γ : Subst J Γ Γ') {A} : Subst J Γ (Γ'.cons A)
-  | _, u => j.rename .weakening (γ u)
-
-def Subst.lift [j : Judge J] {Γ Γ'} (γ : Subst J Γ Γ') {A} : Subst J (Γ.cons A) (Γ'.cons A)
-  | _, .here => j.transform .here
-  | _, .there u => γ.weaken u
+local notation "Ctx" => Ctx (Propn := Propn)
 
 /-! Natural Deduction -/
 
@@ -73,7 +34,7 @@ inductive True : (Γ : Ctx) → (A : Propn) → Type
 instance True.judgeTransHyp : JudgeTrans Hyp True where
   transform := hyp
 
-def True.subst [j : Judge J] [jt : JudgeTrans J True] {Γ Γ'} (γ : Subst J Γ Γ') {A} : (D : True Γ A) → True Γ' A
+def True.subst [j : Judge J] [jt : JudgeTrans J True] (γ : Subst J Γ Γ') {A} : (D : True Γ A) → True Γ' A
   | hyp u => jt.transform (γ u)
   | trueI => trueI
   | falseE D => falseE (D.subst γ)
@@ -120,7 +81,7 @@ instance Use.judgeTransHyp : JudgeTrans Hyp Use where
 
 mutual
 
-def Verif.subst [j : Judge J] [jt : JudgeTrans J Use] {Γ Γ'} (γ : Subst J Γ Γ') {A} : (D : Verif Γ A) → Verif Γ' A
+def Verif.subst [j : Judge J] [jt : JudgeTrans J Use] (γ : Subst J Γ Γ') {A} : (D : Verif Γ A) → Verif Γ' A
   | .uv D => .uv (D.subst γ)
   | .trueI => .trueI
   | .falseE D => .falseE (D.subst γ)
@@ -130,7 +91,7 @@ def Verif.subst [j : Judge J] [jt : JudgeTrans J Use] {Γ Γ'} (γ : Subst J Γ 
   | .orE D D₁ D₂ => .orE (D.subst γ) (D₁.subst γ.lift) (D₂.subst γ.lift)
   | .impI D => .impI (D.subst γ.lift)
 
-def Use.subst [j : Judge J] [jt : JudgeTrans J Use] {Γ Γ'} (γ : Subst J Γ Γ') {A} : (D : Use Γ A) → Use Γ' A
+def Use.subst [j : Judge J] [jt : JudgeTrans J Use] (γ : Subst J Γ Γ') {A} : (D : Use Γ A) → Use Γ' A
   | .hyp u => jt.transform (γ u)
   | .andE₁ D => .andE₁ (D.subst γ)
   | .andE₂ D => .andE₂ (D.subst γ)
@@ -199,7 +160,7 @@ instance Hyp.scJudge : SCJudge Hyp where
 
 namespace SC
 
-def Seq.subst [j : SCJudge J] [jt : JudgeTrans J Seq] {Γ Γ'} (γ : Subst J Γ Γ') {A} : (D : Seq Γ A) → Seq Γ' A
+def Seq.subst [j : SCJudge J] [jt : JudgeTrans J Seq] (γ : Subst J Γ Γ') {A} : (D : Seq Γ A) → Seq Γ' A
   | id u => jt.transform (γ u)
   | trueR => trueR
   | falseL u => j.cut γ u fun _ => falseL
@@ -234,8 +195,8 @@ def Seq.sizeOf : (D : Seq Γ A) → Nat
   | andR D₁ D₂ | orL _ D₁ D₂ | impL _ D₁ D₂ => D₁.sizeOf + D₂.sizeOf + 1
 
 @[simp]
-theorem Seq.sizeOf_subst (γ : Subst Hyp Γ Γ') {A} (D : Seq Γ A) : (D.subst γ).sizeOf = D.sizeOf :=
-  by induction D generalizing Γ' <;> simp! only [*]
+theorem Seq.sizeOf_subst (γ : Subst Hyp Γ Γ') (D : Seq Γ A) : (D.subst γ).sizeOf = D.sizeOf :=
+  by induction D generalizing Γ' <;> simp! only [*, judgeTransHyp]
 
 def Seq.cut : (D : Seq Γ A) → (E : Seq (Γ.cons A) C) → Seq Γ C
   | D, id .here => D

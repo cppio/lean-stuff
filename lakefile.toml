@@ -9,3 +9,6 @@ name = "Common"
 
 [[lean_lib]]
 name = "STLC"
+
+[[lean_lib]]
+name = "Logic"
