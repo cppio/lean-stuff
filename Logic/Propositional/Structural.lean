@@ -1,5 +1,7 @@
 namespace Logic.Propositional.Structural
 
+opaque BasePropn : Type
+
 variable {Propn : Type}
 
 inductive Ctx

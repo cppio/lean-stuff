@@ -1,4 +1,8 @@
+import Logic.Util
+
 namespace Logic.Propositional.Linear
+
+opaque BasePropn : Type
 
 variable {Propn : Type}
 
@@ -36,11 +40,11 @@ def Split.flip : (s : Split Δ Δ₁ Δ₂) → Split Δ Δ₂ Δ₁
   | cons₁ s => s.flip.cons₂
   | cons₂ s => s.flip.cons₁
 
-def Split.shift : (s : Split Δ Δ₁ Δ₂) → (s₁ : Split Δ₁ Δ₁₁ Δ₁₂) → Σ Δ', Split Δ Δ₁₁ Δ' × Split Δ' Δ₁₂ Δ₂
-  | s, nil => ⟨_, triv₂, s⟩
-  | cons₁ s, cons₁ s₁ => let ⟨_, s, s'⟩ := s.shift s₁; ⟨_, s.cons₁, s'⟩
-  | cons₁ s, cons₂ s₁ => let ⟨_, s, s'⟩ := s.shift s₁; ⟨_, s.cons₂, s'.cons₁⟩
-  | cons₂ s, s₁ => let ⟨_, s, s'⟩ := s.shift s₁; ⟨_, s.cons₂, s'.cons₂⟩
+def Split.shift : (s : Split Δ Δ₁ Δ₂) → (s₁ : Split Δ₁ Δ₁₁ Δ₁₂) → {Δ'} × Split Δ Δ₁₁ Δ' × Split Δ' Δ₁₂ Δ₂
+  | s, nil => ⟨triv₂, s⟩
+  | cons₁ s, cons₁ s₁ => let ⟨s, s'⟩ := s.shift s₁; ⟨s.cons₁, s'⟩
+  | cons₁ s, cons₂ s₁ => let ⟨s, s'⟩ := s.shift s₁; ⟨s.cons₂, s'.cons₁⟩
+  | cons₂ s, s₁ => let ⟨s, s'⟩ := s.shift s₁; ⟨s.cons₂, s'.cons₂⟩
 
 inductive Split₁ : (Δ : Ctx) → (A : Propn) → (Δ' : Ctx) → Type
   | here : Split₁ (Δ.cons A) A Δ
@@ -54,9 +58,9 @@ def Split₁.ofSplit : (s : Split Δ (.cons .nil A) Δ') → Split₁ Δ A Δ'
   | .cons₁ s => let .refl _ := s.eq_triv₂; here
   | .cons₂ s => (ofSplit s).there
 
-def Split.shift₁ (s : Split Δ Δ₁ Δ₂) (s₁ : Split₁ Δ₁ A Δ₁₂) : Σ Δ', Split₁ Δ A Δ' × Split Δ' Δ₁₂ Δ₂ :=
-  let ⟨_, s, s'⟩ := s.shift s₁.toSplit
-  ⟨_, .ofSplit s, s'⟩
+def Split.shift₁ (s : Split Δ Δ₁ Δ₂) (s₁ : Split₁ Δ₁ A Δ₁₂) : {Δ'} × Split₁ Δ A Δ' × Split Δ' Δ₁₂ Δ₂ :=
+  let ⟨s, s'⟩ := s.shift s₁.toSplit
+  ⟨.ofSplit s, s'⟩
 
 inductive Subst (J : (Δ : Ctx) → (A : Propn) → Type) : (Δ Δ' : Ctx) → Type
   | nil : Subst J .nil .nil
@@ -68,23 +72,23 @@ def Subst.map (f : ∀ {Δ A}, (D : J Δ A) → J' Δ A) : (δ : Subst J Δ Δ')
   | nil => nil
   | cons s D δ => cons s (f D) (δ.map @f)
 
-def Subst.split : (δ : Subst J Δ Δ') → (s : Split Δ Δ₁ Δ₂) → Σ Δ₁' Δ₂', Split Δ' Δ₁' Δ₂' × Subst J Δ₁ Δ₁' × Subst J Δ₂ Δ₂'
-  | nil, .nil => ⟨_, _, .nil, nil, nil⟩
-  | cons s' D δ, .cons₁ s => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; let ⟨_, s, s'⟩ := s'.flip.shift s.flip; ⟨_, _, s.flip, cons s'.flip D δ₁, δ₂⟩
-  | cons s' D δ, .cons₂ s => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; let ⟨_, s, s'⟩ := s'.flip.shift s; ⟨_, _, s, δ₁, cons s'.flip D δ₂⟩
+def Subst.split : (δ : Subst J Δ Δ') → (s : Split Δ Δ₁ Δ₂) → {Δ₁' Δ₂'} × Split Δ' Δ₁' Δ₂' × Subst J Δ₁ Δ₁' × Subst J Δ₂ Δ₂'
+  | nil, .nil => ⟨.nil, nil, nil⟩
+  | cons s' D δ, .cons₁ s => let ⟨s, δ₁, δ₂⟩ := δ.split s; let ⟨s, s'⟩ := s'.flip.shift s.flip; ⟨s.flip, cons s'.flip D δ₁, δ₂⟩
+  | cons s' D δ, .cons₂ s => let ⟨s, δ₁, δ₂⟩ := δ.split s; let ⟨s, s'⟩ := s'.flip.shift s; ⟨s, δ₁, cons s'.flip D δ₂⟩
 
-def Subst.split₁ (δ : Subst J Δ Δ') (s : Split₁ Δ A Δ₂) : Σ Δ₁' Δ₂', Split Δ' Δ₁' Δ₂' × J Δ₁' A × Subst J Δ₂ Δ₂' :=
-  let ⟨_, _, s, cons s' D nil, δ⟩ := δ.split s.toSplit
+def Subst.split₁ (δ : Subst J Δ Δ') (s : Split₁ Δ A Δ₂) : {Δ₁' Δ₂'} × Split Δ' Δ₁' Δ₂' × J Δ₁' A × Subst J Δ₂ Δ₂' :=
+  let ⟨s, cons s' D nil, δ⟩ := δ.split s.toSplit
   let .refl _ := s'.eq_triv₁
-  ⟨_, _, s, D, δ⟩
+  ⟨s, D, δ⟩
 
 inductive Hyp : (Δ : Ctx) → (A : Propn) → Type
   | mk : Hyp (.cons .nil A) A
 
-def Subst.split₁' (δ : Subst Hyp Δ Δ') (s : Split₁ Δ A Δ₂) : Σ Δ₂', Split Δ' (.cons .nil A) Δ₂' × Subst Hyp Δ₂ Δ₂' :=
-  let ⟨_, _, s, cons s' .mk nil, δ⟩ := δ.split s.toSplit
+def Subst.split₁' (δ : Subst Hyp Δ Δ') (s : Split₁ Δ A Δ₂) : {Δ₂'} × Split₁ Δ' A Δ₂' × Subst Hyp Δ₂ Δ₂' :=
+  let ⟨s, cons s' .mk nil, δ⟩ := δ.split s.toSplit
   let .refl _ := s'.eq_triv₁
-  ⟨_, s, δ⟩
+  ⟨.ofSplit s, δ⟩
 
 class Judge (J : (Δ : Ctx) → (A : Propn) → Type) where
   hyp : J (.cons .nil A) A

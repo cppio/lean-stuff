@@ -2,8 +2,6 @@ import Logic.Propositional.Linear
 
 namespace Logic.Propositional.Linear.Intuitionistic
 
-opaque BasePropn : Type
-
 inductive Propn
   | base (P : BasePropn)
   | one
@@ -43,19 +41,19 @@ instance True.judge : Judge True where
 def True.subst (δ : Subst True Δ Δ') : (D : True Δ A) → True Δ' A
   | hyp => let .cons s D .nil := δ; let .refl _ := s.eq_triv₁; D
   | oneI => let .nil := δ; oneI
-  | oneE s D D₁ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; oneE s (D.subst δ₁) (D₁.subst δ₂)
-  | zeroE s D => let ⟨_, _, s, δ₁, _⟩ := δ.split s; zeroE s (D.subst δ₁)
+  | oneE s D D₁ => let ⟨s, δ₁, δ₂⟩ := δ.split s; oneE s (D.subst δ₁) (D₁.subst δ₂)
+  | zeroE s D => let ⟨s, δ₁, _⟩ := δ.split s; zeroE s (D.subst δ₁)
   | topI => topI
-  | tensorI s D₁ D₂ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; tensorI s (D₁.subst δ₁) (D₂.subst δ₂)
-  | tensorE s D D₁ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; tensorE s (D.subst δ₁) (D₁.subst δ₂.lift.lift)
+  | tensorI s D₁ D₂ => let ⟨s, δ₁, δ₂⟩ := δ.split s; tensorI s (D₁.subst δ₁) (D₂.subst δ₂)
+  | tensorE s D D₁ => let ⟨s, δ₁, δ₂⟩ := δ.split s; tensorE s (D.subst δ₁) (D₁.subst δ₂.lift.lift)
   | plusI₁ D => plusI₁ (D.subst δ)
   | plusI₂ D => plusI₂ (D.subst δ)
-  | plusE s D D₁ D₂ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; plusE s (D.subst δ₁) (D₁.subst δ₂.lift) (D₂.subst δ₂.lift)
+  | plusE s D D₁ D₂ => let ⟨s, δ₁, δ₂⟩ := δ.split s; plusE s (D.subst δ₁) (D₁.subst δ₂.lift) (D₂.subst δ₂.lift)
   | withI D₁ D₂ => withI (D₁.subst δ) (D₂.subst δ)
   | withE₁ D => withE₁ (D.subst δ)
   | withE₂ D => withE₂ (D.subst δ)
   | lolliI D => lolliI (D.subst δ.lift)
-  | lolliE s D D₁ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; lolliE s (D.subst δ₁) (D₁.subst δ₂)
+  | lolliE s D D₁ => let ⟨s, δ₁, δ₂⟩ := δ.split s; lolliE s (D.subst δ₁) (D₁.subst δ₂)
 
 end ND
 
@@ -95,14 +93,14 @@ mutual
 def Verif.subst (δ : Subst Use Δ Δ') : (D : Verif Δ A) → Verif Δ' A
   | .uv D => .uv (D.subst δ)
   | .oneI => let .nil := δ; .oneI
-  | .oneE s D D₁ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; .oneE s (D.subst δ₁) (D₁.subst δ₂)
-  | .zeroE s D => let ⟨_, _, s, δ₁, _⟩ := δ.split s; .zeroE s (D.subst δ₁)
+  | .oneE s D D₁ => let ⟨s, δ₁, δ₂⟩ := δ.split s; .oneE s (D.subst δ₁) (D₁.subst δ₂)
+  | .zeroE s D => let ⟨s, δ₁, _⟩ := δ.split s; .zeroE s (D.subst δ₁)
   | .topI => .topI
-  | .tensorI s D₁ D₂ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; .tensorI s (D₁.subst δ₁) (D₂.subst δ₂)
-  | .tensorE s D D₁ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; .tensorE s (D.subst δ₁) (D₁.subst δ₂.lift.lift)
+  | .tensorI s D₁ D₂ => let ⟨s, δ₁, δ₂⟩ := δ.split s; .tensorI s (D₁.subst δ₁) (D₂.subst δ₂)
+  | .tensorE s D D₁ => let ⟨s, δ₁, δ₂⟩ := δ.split s; .tensorE s (D.subst δ₁) (D₁.subst δ₂.lift.lift)
   | .plusI₁ D => .plusI₁ (D.subst δ)
   | .plusI₂ D => .plusI₂ (D.subst δ)
-  | .plusE s D D₁ D₂ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; .plusE s (D.subst δ₁) (D₁.subst δ₂.lift) (D₂.subst δ₂.lift)
+  | .plusE s D D₁ D₂ => let ⟨s, δ₁, δ₂⟩ := δ.split s; .plusE s (D.subst δ₁) (D₁.subst δ₂.lift) (D₂.subst δ₂.lift)
   | .withI D₁ D₂ => .withI (D₁.subst δ) (D₂.subst δ)
   | .lolliI D => .lolliI (D.subst δ.lift)
 
@@ -110,7 +108,7 @@ def Use.subst (δ : Subst Use Δ Δ') : (D : Use Δ A) → Use Δ' A
   | .hyp => let .cons s D .nil := δ; let .refl _ := s.eq_triv₁; D
   | .withE₁ D => .withE₁ (D.subst δ)
   | .withE₂ D => .withE₂ (D.subst δ)
-  | .lolliE s D D₁ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; .lolliE s (D.subst δ₁) (D₁.subst δ₂)
+  | .lolliE s D D₁ => let ⟨s, δ₁, δ₂⟩ := δ.split s; .lolliE s (D.subst δ₁) (D₁.subst δ₂)
 
 end
 
@@ -184,19 +182,19 @@ namespace SC
 def Seq.subst [j : SCJudge J] (δ : Subst J Δ Δ') : (D : Seq Δ A) → Seq Δ' A
   | id => let .cons s D' .nil := δ; j.cut s D' fun | .here => id
   | oneR => let .nil := δ; oneR
-  | oneL s D => let ⟨_, _, s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => oneL s (D.subst δ)
-  | zeroL s => let ⟨_, _, s, D', _⟩ := δ.split₁ s; j.cut s D' zeroL
+  | oneL s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => oneL s (D.subst δ)
+  | zeroL s => let ⟨s, D', _⟩ := δ.split₁ s; j.cut s D' zeroL
   | topR => topR
-  | tensorR s D₁ D₂ => let ⟨_, _, s, δ₁, δ₂⟩ := δ.split s; tensorR s (D₁.subst δ₁) (D₂.subst δ₂)
-  | tensorL s D => let ⟨_, _, s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => tensorL s (D.subst δ.lift.lift)
+  | tensorR s D₁ D₂ => let ⟨s, δ₁, δ₂⟩ := δ.split s; tensorR s (D₁.subst δ₁) (D₂.subst δ₂)
+  | tensorL s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => tensorL s (D.subst δ.lift.lift)
   | plusR₁ D => plusR₁ (D.subst δ)
   | plusR₂ D => plusR₂ (D.subst δ)
-  | plusL s D₁ D₂ => let ⟨_, _, s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => plusL s (D₁.subst δ.lift) (D₂.subst δ.lift)
+  | plusL s D₁ D₂ => let ⟨s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => plusL s (D₁.subst δ.lift) (D₂.subst δ.lift)
   | withR D₁ D₂ => withR (D₁.subst δ) (D₂.subst δ)
-  | withL₁ s D => let ⟨_, _, s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => withL₁ s (D.subst δ.lift)
-  | withL₂ s D => let ⟨_, _, s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => withL₂ s (D.subst δ.lift)
+  | withL₁ s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => withL₁ s (D.subst δ.lift)
+  | withL₂ s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => withL₂ s (D.subst δ.lift)
   | lolliR D => lolliR (D.subst δ.lift)
-  | lolliL s s' D₁ D₂ => let ⟨_, _, s, D', δ⟩ := δ.split₁ s; let ⟨_, _, s', δ₁, δ₂⟩ := δ.split s'; j.cut s D' fun s => lolliL s s' (D₁.subst δ₁) (D₂.subst δ₂.lift)
+  | lolliL s s' D₁ D₂ => let ⟨s, D', δ⟩ := δ.split₁ s; let ⟨s', δ₁, δ₂⟩ := δ.split s'; j.cut s D' fun s => lolliL s s' (D₁.subst δ₁) (D₂.subst δ₂.lift)
 
 def Seq.id' : ∀ {A}, Seq (.cons .nil A) A
   | .base _ => id
@@ -223,34 +221,34 @@ theorem Seq.sizeOf_subst (δ : Subst Hyp Δ Δ') (D : Seq Δ A) : (D.subst δ).s
 def Seq.cut (s : Split Δ Δ₁ Δ₂) : (D : Seq Δ₁ A) → (E : Seq (Δ₂.cons A) C) → Seq Δ C
   | D, id => let .refl _ := s.eq_triv₁; D
   | oneR, oneL .here E => let .refl _ := s.eq_triv₂; E
-  | tensorR s' D₁ D₂, tensorL .here E => let ⟨_, s, s'⟩ := s.shift s'; cut s D₁ (cut s'.cons₂ D₂ E)
+  | tensorR s' D₁ D₂, tensorL .here E => let ⟨s, s'⟩ := s.shift s'; cut s D₁ (cut s'.cons₂ D₂ E)
   | plusR₁ D, plusL .here E₁ _ => cut s D E₁
   | plusR₂ D, plusL .here _ E₂ => cut s D E₂
   | withR D₁ _, withL₁ .here E => cut s D₁ E
   | withR _ D₂, withL₂ .here E => cut s D₂ E
-  | lolliR D, lolliL .here s₂ E₁ E₂ => let ⟨_, s, s'⟩ := s.flip.shift s₂.flip; cut s.flip (cut s' E₁ D) E₂
-  | oneL s' D, E => let ⟨_, s, s'⟩ := s.shift₁ s'; oneL s (cut s' D E)
-  | zeroL s', _ => let ⟨_, s, _⟩ := s.shift₁ s'; zeroL s
-  | tensorL s' D, E => let ⟨_, s, s'⟩ := s.shift₁ s'; tensorL s (cut s'.cons₁.cons₁ D E)
-  | plusL s' D₁ D₂, E => let ⟨_, s, s'⟩ := s.shift₁ s'; plusL s (cut s'.cons₁ D₁ E) (cut s'.cons₁ D₂ E)
-  | withL₁ s' D, E => let ⟨_, s, s'⟩ := s.shift₁ s'; withL₁ s (cut s'.cons₁ D E)
-  | withL₂ s' D, E => let ⟨_, s, s'⟩ := s.shift₁ s'; withL₂ s (cut s'.cons₁ D E)
-  | lolliL s' s'' D₁ D₂, E => let ⟨_, s, s'⟩ := s.shift₁ s'; let ⟨_, s', s''⟩ := s'.shift s''; lolliL s s' D₁ (cut s''.cons₁ D₂ E)
-  | D, oneL (.there s') E => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; oneL s (cut s'.flip D E)
-  | _, zeroL (.there s') => let ⟨_, s, _⟩ := s.flip.shift₁ s'; zeroL s
+  | lolliR D, lolliL .here s₂ E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s₂.flip; cut s.flip (cut s' E₁ D) E₂
+  | oneL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; oneL s (cut s' D E)
+  | zeroL s', _ => let ⟨s, _⟩ := s.shift₁ s'; zeroL s
+  | tensorL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; tensorL s (cut s'.cons₁.cons₁ D E)
+  | plusL s' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; plusL s (cut s'.cons₁ D₁ E) (cut s'.cons₁ D₂ E)
+  | withL₁ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; withL₁ s (cut s'.cons₁ D E)
+  | withL₂ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; withL₂ s (cut s'.cons₁ D E)
+  | lolliL s' s'' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; lolliL s s' D₁ (cut s''.cons₁ D₂ E)
+  | D, oneL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; oneL s (cut s'.flip D E)
+  | _, zeroL (.there s') => let ⟨s, _⟩ := s.flip.shift₁ s'; zeroL s
   | _, topR => topR
-  | D, tensorR (.cons₁ s') E₁ E₂ => let ⟨_, s, s'⟩ := s.flip.shift s'.flip; tensorR s.flip (cut s'.flip D E₁) E₂
-  | D, tensorR (.cons₂ s') E₁ E₂ => let ⟨_, s, s'⟩ := s.flip.shift s'; tensorR s E₁ (cut s'.flip D E₂)
-  | D, tensorL (.there s') E => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; tensorL s (cut s'.flip.cons₂.cons₂ D (E.subst .exchange₂))
+  | D, tensorR (.cons₁ s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'.flip; tensorR s.flip (cut s'.flip D E₁) E₂
+  | D, tensorR (.cons₂ s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'; tensorR s E₁ (cut s'.flip D E₂)
+  | D, tensorL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; tensorL s (cut s'.flip.cons₂.cons₂ D (E.subst .exchange₂))
   | D, plusR₁ E => plusR₁ (cut s D E)
   | D, plusR₂ E => plusR₂ (cut s D E)
-  | D, plusL (.there s') E₁ E₂ => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; plusL s (cut s'.flip.cons₂ D (E₁.subst .exchange)) (cut s'.flip.cons₂ D (E₂.subst .exchange))
+  | D, plusL (.there s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; plusL s (cut s'.flip.cons₂ D (E₁.subst .exchange)) (cut s'.flip.cons₂ D (E₂.subst .exchange))
   | D, withR E₁ E₂ => withR (cut s D E₁) (cut s D E₂)
-  | D, withL₁ (.there s') E => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; withL₁ s (cut s'.flip.cons₂ D (E.subst .exchange))
-  | D, withL₂ (.there s') E => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; withL₂ s (cut s'.flip.cons₂ D (E.subst .exchange))
+  | D, withL₁ (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; withL₁ s (cut s'.flip.cons₂ D (E.subst .exchange))
+  | D, withL₂ (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; withL₂ s (cut s'.flip.cons₂ D (E.subst .exchange))
   | D, lolliR E => lolliR (cut s.cons₂ D (E.subst .exchange))
-  | D, lolliL (.there s') (.cons₁ s'') E₁ E₂ => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; let ⟨_, s', s''⟩ := s'.shift s''.flip; lolliL s s'.flip (cut s''.flip D E₁) E₂
-  | D, lolliL (.there s') (.cons₂ s'') E₁ E₂ => let ⟨_, s, s'⟩ := s.flip.shift₁ s'; let ⟨_, s', s''⟩ := s'.shift s''; lolliL s s' E₁ (cut s''.flip.cons₂ D (E₂.subst .exchange))
+  | D, lolliL (.there s') (.cons₁ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''.flip; lolliL s s'.flip (cut s''.flip D E₁) E₂
+  | D, lolliL (.there s') (.cons₂ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; lolliL s s' E₁ (cut s''.flip.cons₂ D (E₂.subst .exchange))
   termination_by D E => (A, D.sizeOf, E.sizeOf)
 
 instance Seq.scJudge : SCJudge Seq where
@@ -272,7 +270,7 @@ def Seq.toVerif : (D : Seq Δ A) → VU.Verif Δ A
   | withL₁ s D => D.toVerif.subst (.cons s.toSplit (VU.Use.withE₁ .hyp) .id)
   | withL₂ s D => D.toVerif.subst (.cons s.toSplit (VU.Use.withE₂ .hyp) .id)
   | lolliR D => .lolliI D.toVerif
-  | lolliL s s' D₁ D₂ => let ⟨_, s, s'⟩ := s.toSplit.flip.shift s'.flip; D₂.toVerif.subst (.cons s.flip (VU.Use.lolliE s'.flip .hyp D₁.toVerif) .id)
+  | lolliL s s' D₁ D₂ => let ⟨s, s'⟩ := s.toSplit.flip.shift s'.flip; D₂.toVerif.subst (.cons s.flip (VU.Use.lolliE s'.flip .hyp D₁.toVerif) .id)
 
 end SC
 

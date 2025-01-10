@@ -2,8 +2,6 @@ import Logic.Propositional.Structural
 
 namespace Logic.Propositional.Structural.Intuitionistic
 
-opaque BasePropn : Type
-
 inductive Propn
   | base (P : BasePropn)
   | true
