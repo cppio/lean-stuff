@@ -62,14 +62,15 @@ theorem Seq.sizeOf_subst (γ₁ : Subst Hyp Γ₁ Γ₁') (γ₂ : Subst Hyp Γ�
   by induction D generalizing Γ₁' Γ₂' <;> simp! only [*]
 
 def Seq.cut : (D : Seq Γ₁ (Γ₂.cons A)) → (E : Seq (Γ₁.cons A) Γ₂) → Seq Γ₁ Γ₂
-  | .id u .here, .id .here v => .id u v
-  | .id u (.there v), _ => .id u v
-  | _, .id (.there u) v => .id u v
+  | id u .here, id .here v => id u v
+
   | D@(notR .here D₁), E@(notL .here E₁) => cut (cut (D.subst .id (.lift .weakening)) E₁) (cut D₁ (E.subst (.lift .weakening) .id))
   | D@(andR .here D₁ _), E@(andL₁ .here E₁) => cut (cut (D₁.subst .id .exchange) (E.subst .id .weakening)) (cut (D.subst .weakening .id) (E₁.subst .exchange .id))
   | D@(andR .here _ D₂), E@(andL₂ .here E₂) => cut (cut (D₂.subst .id .exchange) (E.subst .id .weakening)) (cut (D.subst .weakening .id) (E₂.subst .exchange .id))
   | D@(orR₁ .here D₁), E@(orL .here E₁ _) => cut (cut (D₁.subst .id .exchange) (E.subst .id .weakening)) (cut (D.subst .weakening .id) (E₁.subst .exchange .id))
   | D@(orR₂ .here D₂), E@(orL .here _ E₂) => cut (cut (D₂.subst .id .exchange) (E.subst .id .weakening)) (cut (D.subst .weakening .id) (E₂.subst .exchange .id))
+
+  | id u (.there v), _ => id u v
   | trueR (.there v), _ => trueR v
   | falseL u, _ => falseL u
   | notR (.there v) D, E => notR v (cut D (E.subst (.lift .weakening) .id))
@@ -80,6 +81,8 @@ def Seq.cut : (D : Seq Γ₁ (Γ₂.cons A)) → (E : Seq (Γ₁.cons A) Γ₂) 
   | orR₁ (.there v) D, E => orR₁ v (cut (D.subst .id .exchange) (E.subst .id .weakening))
   | orR₂ (.there v) D, E => orR₂ v (cut (D.subst .id .exchange) (E.subst .id .weakening))
   | orL u D₁ D₂, E => orL u (cut D₁ (E.subst (.lift .weakening) .id)) (cut D₂ (E.subst (.lift .weakening) .id))
+
+  | _, id (.there u) v => id u v
   | _, trueR v => trueR v
   | _, falseL (.there u) => falseL u
   | D, notR v E => notR v (cut (D.subst .weakening .id) (E.subst .exchange .id))
@@ -90,6 +93,7 @@ def Seq.cut : (D : Seq Γ₁ (Γ₂.cons A)) → (E : Seq (Γ₁.cons A) Γ₂) 
   | D, orR₁ v E => orR₁ v (cut (D.subst .id (.lift .weakening)) E)
   | D, orR₂ v E => orR₂ v (cut (D.subst .id (.lift .weakening)) E)
   | D, orL (.there u) E₁ E₂ => orL u (cut (D.subst .weakening .id) (E₁.subst .exchange .id)) (cut (D.subst .weakening .id) (E₂.subst .exchange .id))
+
   termination_by D E => (A, D.sizeOf, E.sizeOf)
   decreasing_by all_goals subst_vars; decreasing_tactic
 

@@ -110,3 +110,7 @@ def Subst.exchange : Subst Hyp (Ctx.cons Δ A |>.cons B) (Δ.cons B |>.cons A) :
 
 def Subst.exchange₂ : Subst Hyp (Ctx.cons Δ A |>.cons B |>.cons C) (Δ.cons B |>.cons C |>.cons A) :=
   cons (.cons₂ (.cons₁ .triv₂)) .mk exchange
+
+unif_hint (J : (x : α) → (Δ : Ctx) → (A : Propn) → Type) (Δ Δ' : Ctx) (x : α) where
+  J ≟ fun _ => Hyp
+  ⊢ Subst Hyp Δ Δ' ≟ Subst (J x) Δ Δ'

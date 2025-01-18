@@ -90,6 +90,7 @@ theorem Seq.sizeOf_subst (δ₁ : Subst Hyp Δ₁ Δ₁') (δ₂ : Subst Hyp Δ�
 set_option maxHeartbeats 300000 in
 def Seq.cut (s₁ : Split Δ₁ Δ₁₁ Δ₁₂) (s₂ : Split Δ₂ Δ₂₁ Δ₂₂) : (D : Seq Δ₁₁ (Δ₂₁.cons A)) → (E : Seq (Δ₁₂.cons A) Δ₂₂) → Seq Δ₁ Δ₂
   | id, id => let .refl _ := s₁.eq_triv₁; let .refl _ := s₂.eq_triv₂; id
+
   | oneR, oneL .here E => let .refl _ := s₁.eq_triv₂; let .refl _ := s₂.eq_triv₂; E
   | botR .here D, botL => let .refl _ := s₁.eq_triv₁; let .refl _ := s₂.eq_triv₁; D
   | negR .here D, negL .here E => cut s₁.flip s₂.flip E D
@@ -99,6 +100,7 @@ def Seq.cut (s₁ : Split Δ₁ Δ₁₁ Δ₁₂) (s₂ : Split Δ₂ Δ₂₁ 
   | withR .here D₁ _, withL₁ .here E => cut s₁ s₂ D₁ E
   | withR .here _ D₂, withL₂ .here E => cut s₁ s₂ D₂ E
   | parR .here D, parL .here s₁' s₂' E₁ E₂ => let ⟨s₁, s₁'⟩ := s₁.flip.shift s₁'; let ⟨s₂, s₂'⟩ := s₂.flip.shift s₂'; cut s₁.flip s₂.flip (cut s₁'.flip s₂'.flip.cons₁ D E₂) E₁
+
   | oneL s D, E => let ⟨s, s₁⟩ := s₁.shift₁ s; oneL s (cut s₁ s₂ D E)
   | zeroL s, _ => let ⟨s, _⟩ := s₁.shift₁ s; zeroL s
   | topR (.there s), _ => let ⟨s, _⟩ := s₂.shift₁ s; topR s
@@ -117,6 +119,7 @@ def Seq.cut (s₁ : Split Δ₁ Δ₁₁ Δ₁₂) (s₂ : Split Δ₂ Δ₂₁ 
   | parR (.there s) D, E => let ⟨s, s₂⟩ := s₂.shift₁ s; parR s (cut s₁ s₂.cons₁.cons₁ (D.subst .id .exchange₂) E)
   | parL s s₁' (.cons₁ s₂') D₁ D₂, E => let ⟨s, s₁⟩ := s₁.shift₁ s; let ⟨s₁', s₁⟩ := s₁.shift s₁'.flip; let ⟨s₂', s₂⟩ := s₂.shift s₂'.flip; parL s s₁'.flip s₂'.flip (cut s₁.cons₁ s₂ D₁ E) D₂
   | parL s s₁' (.cons₂ s₂') D₁ D₂, E => let ⟨s, s₁⟩ := s₁.shift₁ s; let ⟨s₁', s₁⟩ := s₁.shift s₁'; let ⟨s₂', s₂⟩ := s₂.shift s₂'; parL s s₁' s₂' D₁ (cut s₁.cons₁ s₂ D₂ E)
+
   | D, oneL (.there s) E => let ⟨s, s₁⟩ := s₁.flip.shift₁ s; oneL s (cut s₁.flip s₂ D E)
   | _, zeroL (.there s) => let ⟨s, _⟩ := s₁.flip.shift₁ s; zeroL s
   | _, topR s => let ⟨s, _⟩ := s₂.flip.shift₁ s; topR s
@@ -135,6 +138,7 @@ def Seq.cut (s₁ : Split Δ₁ Δ₁₁ Δ₁₂) (s₂ : Split Δ₂ Δ₂₁ 
   | D, parR s E => let ⟨s, s₂⟩ := s₂.flip.shift₁ s; parR s (cut s₁ s₂.flip.cons₂.cons₂ D E)
   | D, parL (.there s) (.cons₁ s₁') s₂' E₁ E₂ => let ⟨s, s₁⟩ := s₁.flip.shift₁ s; let ⟨s₁', s₁⟩ := s₁.shift s₁'.flip; let ⟨s₂', s₂⟩ := s₂.flip.shift s₂'.flip; parL s s₁'.flip s₂'.flip (cut s₁.flip.cons₂ s₂.flip D (E₁.subst .exchange .id)) E₂
   | D, parL (.there s) (.cons₂ s₁') s₂' E₁ E₂ => let ⟨s, s₁⟩ := s₁.flip.shift₁ s; let ⟨s₁', s₁⟩ := s₁.shift s₁'; let ⟨s₂', s₂⟩ := s₂.flip.shift s₂'; parL s s₁' s₂' E₁ (cut s₁.flip.cons₂ s₂.flip D (E₂.subst .exchange .id))
+
   termination_by D E => (A, D.sizeOf, E.sizeOf)
 
 end SC

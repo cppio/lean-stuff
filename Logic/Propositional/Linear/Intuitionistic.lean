@@ -154,7 +154,9 @@ end VU
 
 /-! Sequent Calculus -/
 
-inductive SC.Seq : (Δ : Ctx) → (A : Propn) → Type
+namespace SC
+
+inductive Seq : (Δ : Ctx) → (A : Propn) → Type
   | id : Seq (.cons .nil (.base P)) (.base P)
   | oneR : Seq .nil .one
   | oneL (s : Split₁ Δ .one Δ') (D : Seq Δ' C) : Seq Δ C
@@ -171,15 +173,13 @@ inductive SC.Seq : (Δ : Ctx) → (A : Propn) → Type
   | lolliR (D : Seq (Δ.cons A) B) : Seq Δ (A.lolli B)
   | lolliL (s : Split₁ Δ (A.lolli B) Δ') (s' : Split Δ' Δ₁ Δ₂) (D₁ : Seq Δ₁ A) (D₂ : Seq (Δ₂.cons B) C) : Seq Δ C
 
-class SCJudge (J) extends Judge J where
-  cut (s : Split Δ Δ₁ Δ₂) (D' : J Δ₁ A) (D : ∀ {Δ}, (s : Split₁ Δ A Δ₂) → SC.Seq Δ C) : SC.Seq Δ C
+class SeqJudge (J) extends Judge J where
+  cut (s : Split Δ Δ₁ Δ₂) (D' : J Δ₁ A) (D : ∀ {Δ}, (s : Split₁ Δ A Δ₂) → Seq Δ C) : Seq Δ C
 
-instance Hyp.scJudge : SCJudge Hyp where
+instance seqJudgeHyp : SeqJudge Hyp where
   cut s D' D := D (let .mk := D'; .ofSplit s)
 
-namespace SC
-
-def Seq.subst [j : SCJudge J] (δ : Subst J Δ Δ') : (D : Seq Δ A) → Seq Δ' A
+def Seq.subst [j : SeqJudge J] (δ : Subst J Δ Δ') : (D : Seq Δ A) → Seq Δ' A
   | id => let .cons s D' .nil := δ; j.cut s D' fun | .here => id
   | oneR => let .nil := δ; oneR
   | oneL s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cut s D' fun s => oneL s (D.subst δ)
@@ -219,14 +219,16 @@ theorem Seq.sizeOf_subst (δ : Subst Hyp Δ Δ') (D : Seq Δ A) : (D.subst δ).s
   case oneR => let .nil := δ; rfl
 
 def Seq.cut (s : Split Δ Δ₁ Δ₂) : (D : Seq Δ₁ A) → (E : Seq (Δ₂.cons A) C) → Seq Δ C
-  | D, id => let .refl _ := s.eq_triv₁; D
+  | id, id => let .refl _ := s.eq_triv₁; id
+
   | oneR, oneL .here E => let .refl _ := s.eq_triv₂; E
   | tensorR s' D₁ D₂, tensorL .here E => let ⟨s, s'⟩ := s.shift s'; cut s D₁ (cut s'.cons₂ D₂ E)
   | plusR₁ D, plusL .here E₁ _ => cut s D E₁
   | plusR₂ D, plusL .here _ E₂ => cut s D E₂
   | withR D₁ _, withL₁ .here E => cut s D₁ E
   | withR _ D₂, withL₂ .here E => cut s D₂ E
-  | lolliR D, lolliL .here s₂ E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s₂.flip; cut s.flip (cut s' E₁ D) E₂
+  | lolliR D, lolliL .here s' E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'.flip; cut s.flip (cut s' E₁ D) E₂
+
   | oneL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; oneL s (cut s' D E)
   | zeroL s', _ => let ⟨s, _⟩ := s.shift₁ s'; zeroL s
   | tensorL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; tensorL s (cut s'.cons₁.cons₁ D E)
@@ -234,6 +236,7 @@ def Seq.cut (s : Split Δ Δ₁ Δ₂) : (D : Seq Δ₁ A) → (E : Seq (Δ₂.c
   | withL₁ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; withL₁ s (cut s'.cons₁ D E)
   | withL₂ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; withL₂ s (cut s'.cons₁ D E)
   | lolliL s' s'' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; lolliL s s' D₁ (cut s''.cons₁ D₂ E)
+
   | D, oneL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; oneL s (cut s'.flip D E)
   | _, zeroL (.there s') => let ⟨s, _⟩ := s.flip.shift₁ s'; zeroL s
   | _, topR => topR
@@ -249,9 +252,10 @@ def Seq.cut (s : Split Δ Δ₁ Δ₂) : (D : Seq Δ₁ A) → (E : Seq (Δ₂.c
   | D, lolliR E => lolliR (cut s.cons₂ D (E.subst .exchange))
   | D, lolliL (.there s') (.cons₁ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''.flip; lolliL s s'.flip (cut s''.flip D E₁) E₂
   | D, lolliL (.there s') (.cons₂ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; lolliL s s' E₁ (cut s''.flip.cons₂ D (E₂.subst .exchange))
+
   termination_by D E => (A, D.sizeOf, E.sizeOf)
 
-instance Seq.scJudge : SCJudge Seq where
+instance Seq.seqJudge : SeqJudge Seq where
   hyp := id'
   cut s D' D := cut s D' (D .here)
 
@@ -267,10 +271,10 @@ def Seq.toVerif : (D : Seq Δ A) → VU.Verif Δ A
   | plusR₂ D => .plusI₂ D.toVerif
   | plusL s D₁ D₂ => .plusE s.toSplit .hyp D₁.toVerif D₂.toVerif
   | withR D₁ D₂ => .withI D₁.toVerif D₂.toVerif
-  | withL₁ s D => D.toVerif.subst (.cons s.toSplit (VU.Use.withE₁ .hyp) .id)
-  | withL₂ s D => D.toVerif.subst (.cons s.toSplit (VU.Use.withE₂ .hyp) .id)
+  | withL₁ s D => D.toVerif.subst (.cons s.toSplit (.withE₁ .hyp) .id)
+  | withL₂ s D => D.toVerif.subst (.cons s.toSplit (.withE₂ .hyp) .id)
   | lolliR D => .lolliI D.toVerif
-  | lolliL s s' D₁ D₂ => let ⟨s, s'⟩ := s.toSplit.flip.shift s'.flip; D₂.toVerif.subst (.cons s.flip (VU.Use.lolliE s'.flip .hyp D₁.toVerif) .id)
+  | lolliL s s' D₁ D₂ => let ⟨s, s'⟩ := s.toSplit.flip.shift s'.flip; D₂.toVerif.subst (.cons s.flip (.lolliE s'.flip .hyp D₁.toVerif) .id)
 
 end SC
 
