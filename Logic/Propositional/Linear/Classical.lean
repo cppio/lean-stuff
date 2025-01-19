@@ -1,6 +1,6 @@
 import Logic.Propositional.Linear
 
-namespace Logic.Propositional.Linear.Intuitionistic
+namespace Logic.Propositional.Linear.Classical
 
 inductive Propn
   | base (P : BasePropn)

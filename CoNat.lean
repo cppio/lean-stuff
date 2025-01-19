@@ -2,7 +2,7 @@ def CoNat := { f : Nat → Bool // ∀ i, f i || !f i.succ }
 --def CoNat := { f : Nat → Bool // ∀ i, f i.succ → f i }
 
 def CoNat.ofNat (n : Nat) : CoNat :=
-  ⟨(Nat.blt · n), λ _ => by simp [← Bool.not_eq_true]; exact if h : _ then .inl h else .inr (h ∘ Nat.lt_of_succ_lt)⟩
+  ⟨(Nat.blt · n), λ _ => by simp [← Bool.not_eq_true]; exact if h : _ then .inl h else .inr (.step <| Nat.le_of_not_lt h)⟩
 
 def CoNat.inf : CoNat :=
   ⟨λ _ => true, λ _ => rfl⟩
@@ -99,7 +99,8 @@ theorem CoNat.find_ (p : CoNat → Bool) (h : p (find p)) : ∀ x, p x := by
       apply this
       have := congrFun (congrArg Subtype.val hn) n
       simp [find, ofNat, Nat.blt_succ_self] at this
-      exact ⟨this, h⟩
+      exact this
+      exact h
   have h₂ : find p = .inf := lemma33 h₁
   have h₃ : ∀ n, p (.ofNat n) := λ n =>
     have : find' p n := congrFun (congrArg Subtype.val h₂) n

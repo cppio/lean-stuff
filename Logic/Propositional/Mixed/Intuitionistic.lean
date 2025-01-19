@@ -297,10 +297,10 @@ def SVerif.uv' (D : SUse Γ A) : SVerif Γ A :=
   | .base _ => .uv D
   | .true => .trueI
   | .false => .falseE D
-  | .and .. => .andI (SVerif.uv' (.andE₁ D)) (SVerif.uv' (.andE₂ D))
-  | .or .. => .orE D (.orI₁ (SVerif.uv' (.hyp .here))) (.orI₂ (SVerif.uv' (.hyp .here)))
-  | .imp .. => .impI (SVerif.uv' (.impE (D.substS .weakening) (SVerif.uv' (.hyp .here))))
-  | .up _ => .upI (LVerif.uv' (.upE D))
+  | .and .. => .andI (.uv' (.andE₁ D)) (.uv' (.andE₂ D))
+  | .or .. => .orE D (.orI₁ (.uv' (.hyp .here))) (.orI₂ (.uv' (.hyp .here)))
+  | .imp .. => .impI (.uv' (.impE (D.substS .weakening) (.uv' (.hyp .here))))
+  | .up _ => .upI (.uv' (.upE D))
 
 def LVerif.uv' (D : LUse Γ Δ A) : LVerif Γ Δ A :=
   match A with
@@ -308,11 +308,11 @@ def LVerif.uv' (D : LUse Γ Δ A) : LVerif Γ Δ A :=
   | .one => .oneE .triv₁ D .oneI
   | .zero => .zeroE .triv₁ D
   | .top => .topI
-  | .tensor .. => .tensorE .triv₁ D (.tensorI (.cons₂ .triv₁) (LVerif.uv' .hyp) (LVerif.uv' .hyp))
-  | .plus .. => .plusE .triv₁ D (.plusI₁ (LVerif.uv' .hyp)) (.plusI₂ (LVerif.uv' .hyp))
-  | .with .. => .withI (LVerif.uv' (.withE₁ D)) (LVerif.uv' (.withE₂ D))
-  | .lolli .. => .lolliI (LVerif.uv' (.lolliE (.cons₂ .triv₁) D (LVerif.uv' .hyp)))
-  | .down _ => .downE .triv₁ D (.downI (SVerif.uv' (.hyp .here)))
+  | .tensor .. => .tensorE .triv₁ D (.tensorI (.cons₂ .triv₁) (.uv' .hyp) (.uv' .hyp))
+  | .plus .. => .plusE .triv₁ D (.plusI₁ (.uv' .hyp)) (.plusI₂ (.uv' .hyp))
+  | .with .. => .withI (.uv' (.withE₁ D)) (.uv' (.withE₂ D))
+  | .lolli .. => .lolliI (.uv' (.lolliE (.cons₂ .triv₁) D (.uv' .hyp)))
+  | .down _ => .downE .triv₁ D (.downI (.uv' (.hyp .here)))
 
 end
 
@@ -484,7 +484,7 @@ def LSeq.substL [j : SeqLJudge J] (δ : LSubst (J Γ) Δ Δ') : (D : LSeq Γ Δ 
   | id => let .cons s D' .nil := δ; j.cutL s D' fun | .here => id
   | oneR => let .nil := δ; oneR
   | oneL s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cutL s D' fun s => oneL s (D.substL δ)
-  | zeroL s => let ⟨s, D', _⟩ := δ.split₁ s; j.cutL s D' fun s => zeroL s
+  | zeroL s => let ⟨s, D', _⟩ := δ.split₁ s; j.cutL s D' zeroL
   | topR => topR
   | tensorR s D₁ D₂ => let ⟨s, δ₁, δ₂⟩ := δ.split s; tensorR s (D₁.substL δ₁) (D₂.substL δ₂)
   | tensorL s D => let ⟨s, D', δ⟩ := δ.split₁ s; j.cutL s D' fun s => tensorL s (D.substL δ.lift.lift)
@@ -512,21 +512,21 @@ def SSeq.id' (u : SHyp Γ A) : SSeq Γ A :=
   | .base _ => .id u
   | .true => .trueR
   | .false => .falseL u
-  | .and .. => .andR (.andL₁ u (SSeq.id' .here)) (.andL₂ u (SSeq.id' .here))
-  | .or .. => .orL u (.orR₁ (SSeq.id' .here)) (.orR₂ (SSeq.id' .here))
-  | .imp .. => .impR (.impL u.there (SSeq.id' .here) (SSeq.id' .here))
-  | .up .. => .upR (.upL u LSeq.id')
+  | .and .. => .andR (.andL₁ u (.id' .here)) (.andL₂ u (.id' .here))
+  | .or .. => .orL u (.orR₁ (.id' .here)) (.orR₂ (.id' .here))
+  | .imp .. => .impR (.impL u.there (.id' .here) (.id' .here))
+  | .up .. => .upR (.upL u .id')
 
 def LSeq.id' : ∀ {A}, LSeq Γ (.cons .nil A) A
   | .base _ => .id
   | .one => .oneL .here .oneR
   | .zero => .zeroL .here
   | .top => .topR
-  | .tensor .. => .tensorL .here (.tensorR (.cons₂ .triv₁) LSeq.id' LSeq.id')
-  | .plus .. => .plusL .here (.plusR₁ LSeq.id') (.plusR₂ LSeq.id')
-  | .with .. => .withR (.withL₁ .here LSeq.id') (.withL₂ .here LSeq.id')
-  | .lolli .. => .lolliR (.lolliL (.there .here) .triv₁ LSeq.id' LSeq.id')
-  | .down _ => .downL .here (.downR (SSeq.id' .here))
+  | .tensor .. => .tensorL .here (.tensorR (.cons₂ .triv₁) .id' .id')
+  | .plus .. => .plusL .here (.plusR₁ .id') (.plusR₂ .id')
+  | .with .. => .withR (.withL₁ .here .id') (.withL₂ .here .id')
+  | .lolli .. => .lolliR (.lolliL (.there .here) .triv₁ .id' .id')
+  | .down _ => .downL .here (.downR (.id' .here))
 
 end
 
@@ -598,71 +598,71 @@ set_option maxHeartbeats 600000
 def SSeq.cutS : (D : SSeq Γ A) → (E : SSeq (Γ.cons A) C) → SSeq Γ C
   | .id u, .id .here => .id u
 
-  | D@(.andR D₁ _), .andL₁ .here E => SSeq.cutS D₁ (SSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D@(.andR _ D₂), .andL₂ .here E => SSeq.cutS D₂ (SSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D@(.orR₁ D₁), .orL .here E₁ _ => SSeq.cutS D₁ (SSeq.cutS (D.substS .weakening) (E₁.substS .exchange))
-  | D@(.orR₂ D₂), .orL .here _ E₂ => SSeq.cutS D₂ (SSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D@(.impR D₂), .impL .here E₁ E₂ => SSeq.cutS (SSeq.cutS (SSeq.cutS D E₁) D₂) (SSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D@(.andR D₁ _), .andL₁ .here E => .cutS D₁ (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D@(.andR _ D₂), .andL₂ .here E => .cutS D₂ (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D@(.orR₁ D₁), .orL .here E₁ _ => .cutS D₁ (.cutS (D.substS .weakening) (E₁.substS .exchange))
+  | D@(.orR₂ D₂), .orL .here _ E₂ => .cutS D₂ (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D@(.impR D₂), .impL .here E₁ E₂ => .cutS (.cutS (.cutS D E₁) D₂) (.cutS (D.substS .weakening) (E₂.substS .exchange))
 
   | .falseL u, _ => .falseL u
-  | .andL₁ u D, E => .andL₁ u (SSeq.cutS D (E.substS (.lift .weakening)))
-  | .andL₂ u D, E => .andL₂ u (SSeq.cutS D (E.substS (.lift .weakening)))
-  | .orL u D₁ D₂, E => .orL u (SSeq.cutS D₁ (E.substS (.lift .weakening))) (SSeq.cutS D₂ (E.substS (.lift .weakening)))
-  | .impL u D₁ D₂, E => .impL u D₁ (SSeq.cutS D₂ (E.substS (.lift .weakening)))
+  | .andL₁ u D, E => .andL₁ u (.cutS D (E.substS (.lift .weakening)))
+  | .andL₂ u D, E => .andL₂ u (.cutS D (E.substS (.lift .weakening)))
+  | .orL u D₁ D₂, E => .orL u (.cutS D₁ (E.substS (.lift .weakening))) (.cutS D₂ (E.substS (.lift .weakening)))
+  | .impL u D₁ D₂, E => .impL u D₁ (.cutS D₂ (E.substS (.lift .weakening)))
 
   | _, .id (.there u) => .id u
   | _, .trueR => .trueR
   | _, .falseL (.there u) => .falseL u
-  | D, .andR E₁ E₂ => .andR (SSeq.cutS D E₁) (SSeq.cutS D E₂)
-  | D, .andL₁ (.there u) E => .andL₁ u (SSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D, .andL₂ (.there u) E => .andL₂ u (SSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D, .orR₁ E => .orR₁ (SSeq.cutS D E)
-  | D, .orR₂ E => .orR₂ (SSeq.cutS D E)
-  | D, .orL (.there u) E₁ E₂ => .orL u (SSeq.cutS (D.substS .weakening) (E₁.substS .exchange)) (SSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D, .impR E => .impR (SSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D, .impL (.there u) E₁ E₂ => .impL u (SSeq.cutS D E₁) (SSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D, .upR E => .upR (LSeq.cutS D E)
+  | D, .andR E₁ E₂ => .andR (.cutS D E₁) (.cutS D E₂)
+  | D, .andL₁ (.there u) E => .andL₁ u (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D, .andL₂ (.there u) E => .andL₂ u (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D, .orR₁ E => .orR₁ (.cutS D E)
+  | D, .orR₂ E => .orR₂ (.cutS D E)
+  | D, .orL (.there u) E₁ E₂ => .orL u (.cutS (D.substS .weakening) (E₁.substS .exchange)) (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D, .impR E => .impR (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D, .impL (.there u) E₁ E₂ => .impL u (.cutS D E₁) (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D, .upR E => .upR (.cutS D E)
 
   termination_by D E => (sizeOf A, D.sizeOf, E.sizeOf)
   decreasing_by all_goals subst_vars; decreasing_tactic
 
 def LSeq.cutS : (D : SSeq Γ A) → (E : LSeq (Γ.cons A) Δ C) → LSeq Γ Δ C
-  | D@(.andR D₁ _), .andL₁ .here E => LSeq.cutS D₁ (LSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D@(.andR _ D₂), .andL₂ .here E => LSeq.cutS D₂ (LSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D@(.orR₁ D₁), .orL .here E₁ _ => LSeq.cutS D₁ (LSeq.cutS (D.substS .weakening) (E₁.substS .exchange))
-  | D@(.orR₂ D₂), .orL .here _ E₂ => LSeq.cutS D₂ (LSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D@(.impR D₂), .impL .here E₁ E₂ => LSeq.cutS (SSeq.cutS (SSeq.cutS D E₁) D₂) (LSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D@(.upR D₁), .upL .here E => LSeq.cutL .triv₂ D₁ (LSeq.cutS D E)
+  | D@(.andR D₁ _), .andL₁ .here E => .cutS D₁ (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D@(.andR _ D₂), .andL₂ .here E => .cutS D₂ (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D@(.orR₁ D₁), .orL .here E₁ _ => .cutS D₁ (.cutS (D.substS .weakening) (E₁.substS .exchange))
+  | D@(.orR₂ D₂), .orL .here _ E₂ => .cutS D₂ (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D@(.impR D₂), .impL .here E₁ E₂ => .cutS (.cutS (.cutS D E₁) D₂) (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D@(.upR D₁), .upL .here E => .cutL .triv₂ D₁ (.cutS D E)
 
   | .falseL u, _ => .falseL u
-  | .andL₁ u D, E => .andL₁ u (LSeq.cutS D (E.substS (.lift .weakening)))
-  | .andL₂ u D, E => .andL₂ u (LSeq.cutS D (E.substS (.lift .weakening)))
-  | .orL u D₁ D₂, E => .orL u (LSeq.cutS D₁ (E.substS (.lift .weakening))) (LSeq.cutS D₂ (E.substS (.lift .weakening)))
-  | .impL u D₁ D₂, E => .impL u D₁ (LSeq.cutS D₂ (E.substS (.lift .weakening)))
+  | .andL₁ u D, E => .andL₁ u (.cutS D (E.substS (.lift .weakening)))
+  | .andL₂ u D, E => .andL₂ u (.cutS D (E.substS (.lift .weakening)))
+  | .orL u D₁ D₂, E => .orL u (.cutS D₁ (E.substS (.lift .weakening))) (.cutS D₂ (E.substS (.lift .weakening)))
+  | .impL u D₁ D₂, E => .impL u D₁ (.cutS D₂ (E.substS (.lift .weakening)))
 
   | _, .id => .id
   | _, .oneR => .oneR
-  | D, .oneL s E => .oneL s (LSeq.cutS D E)
+  | D, .oneL s E => .oneL s (.cutS D E)
   | _, .zeroL s => .zeroL s
   | _, .topR => .topR
-  | D, .tensorR s E₁ E₂ => .tensorR s (LSeq.cutS D E₁) (LSeq.cutS D E₂)
-  | D, .tensorL s E => .tensorL s (LSeq.cutS D E)
-  | D, .plusR₁ E => .plusR₁ (LSeq.cutS D E)
-  | D, .plusR₂ E => .plusR₂ (LSeq.cutS D E)
-  | D, .plusL s E₁ E₂ => .plusL s (LSeq.cutS D E₁) (LSeq.cutS D E₂)
-  | D, .withR E₁ E₂ => .withR (LSeq.cutS D E₁) (LSeq.cutS D E₂)
-  | D, .withL₁ s E => .withL₁ s (LSeq.cutS D E)
-  | D, .withL₂ s E => .withL₂ s (LSeq.cutS D E)
-  | D, .lolliR E => .lolliR (LSeq.cutS D E)
-  | D, .lolliL s s' E₁ E₂ => .lolliL s s' (LSeq.cutS D E₁) (LSeq.cutS D E₂)
-  | D, .downR E => .downR (SSeq.cutS D E)
-  | D, .downL s E => .downL s (LSeq.cutS (D.substS .weakening) (E.substS .exchange))
+  | D, .tensorR s E₁ E₂ => .tensorR s (.cutS D E₁) (.cutS D E₂)
+  | D, .tensorL s E => .tensorL s (.cutS D E)
+  | D, .plusR₁ E => .plusR₁ (.cutS D E)
+  | D, .plusR₂ E => .plusR₂ (.cutS D E)
+  | D, .plusL s E₁ E₂ => .plusL s (.cutS D E₁) (.cutS D E₂)
+  | D, .withR E₁ E₂ => .withR (.cutS D E₁) (.cutS D E₂)
+  | D, .withL₁ s E => .withL₁ s (.cutS D E)
+  | D, .withL₂ s E => .withL₂ s (.cutS D E)
+  | D, .lolliR E => .lolliR (.cutS D E)
+  | D, .lolliL s s' E₁ E₂ => .lolliL s s' (.cutS D E₁) (.cutS D E₂)
+  | D, .downR E => .downR (.cutS D E)
+  | D, .downL s E => .downL s (.cutS (D.substS .weakening) (E.substS .exchange))
   | _, .falseL (.there u) => .falseL u
-  | D, .andL₁ (.there u) E => .andL₁ u (LSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D, .andL₂ (.there u) E => .andL₂ u (LSeq.cutS (D.substS .weakening) (E.substS .exchange))
-  | D, .orL (.there u) E₁ E₂ => .orL u (LSeq.cutS (D.substS .weakening) (E₁.substS .exchange)) (LSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D, .impL (.there u) E₁ E₂ => .impL u (SSeq.cutS D E₁) (LSeq.cutS (D.substS .weakening) (E₂.substS .exchange))
-  | D, .upL (.there u) E => .upL u (LSeq.cutS D E)
+  | D, .andL₁ (.there u) E => .andL₁ u (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D, .andL₂ (.there u) E => .andL₂ u (.cutS (D.substS .weakening) (E.substS .exchange))
+  | D, .orL (.there u) E₁ E₂ => .orL u (.cutS (D.substS .weakening) (E₁.substS .exchange)) (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D, .impL (.there u) E₁ E₂ => .impL u (.cutS D E₁) (.cutS (D.substS .weakening) (E₂.substS .exchange))
+  | D, .upL (.there u) E => .upL u (.cutS D E)
 
   termination_by D E => (sizeOf A, D.sizeOf, E.sizeOf)
   decreasing_by all_goals subst_vars; decreasing_tactic
@@ -671,51 +671,51 @@ def LSeq.cutL (s : Split Δ Δ₁ Δ₂) : (D : LSeq Γ Δ₁ A) → (E : LSeq �
   | .id, .id => let .refl _ := s.eq_triv₁; .id
 
   | .oneR, .oneL .here E => let .refl _ := s.eq_triv₂; E
-  | .tensorR s' D₁ D₂, .tensorL .here E => let ⟨s, s'⟩ := s.shift s'; LSeq.cutL s D₁ (LSeq.cutL s'.cons₂ D₂ E)
-  | .plusR₁ D, .plusL .here E₁ _ => LSeq.cutL s D E₁
-  | .plusR₂ D, .plusL .here _ E₂ => LSeq.cutL s D E₂
-  | .withR D₁ _, .withL₁ .here E => LSeq.cutL s D₁ E
-  | .withR _ D₂, .withL₂ .here E => LSeq.cutL s D₂ E
-  | .lolliR D, .lolliL .here s' E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'.flip; LSeq.cutL s.flip (LSeq.cutL s' E₁ D) E₂
-  | .downR D, .downL .here E => let .refl _ := s.eq_triv₂; LSeq.cutS D E
+  | .tensorR s' D₁ D₂, .tensorL .here E => let ⟨s, s'⟩ := s.shift s'; .cutL s D₁ (.cutL s'.cons₂ D₂ E)
+  | .plusR₁ D, .plusL .here E₁ _ => .cutL s D E₁
+  | .plusR₂ D, .plusL .here _ E₂ => .cutL s D E₂
+  | .withR D₁ _, .withL₁ .here E => .cutL s D₁ E
+  | .withR _ D₂, .withL₂ .here E => .cutL s D₂ E
+  | .lolliR D, .lolliL .here s' E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'.flip; .cutL s.flip (.cutL s' E₁ D) E₂
+  | .downR D, .downL .here E => let .refl _ := s.eq_triv₂; .cutS D E
 
-  | .oneL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .oneL s (LSeq.cutL s' D E)
+  | .oneL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .oneL s (.cutL s' D E)
   | .zeroL s', _ => let ⟨s, _⟩ := s.shift₁ s'; .zeroL s
-  | .tensorL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .tensorL s (LSeq.cutL s'.cons₁.cons₁ D E)
-  | .plusL s' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; .plusL s (LSeq.cutL s'.cons₁ D₁ E) (LSeq.cutL s'.cons₁ D₂ E)
-  | .withL₁ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .withL₁ s (LSeq.cutL s'.cons₁ D E)
-  | .withL₂ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .withL₂ s (LSeq.cutL s'.cons₁ D E)
-  | .lolliL s' s'' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; .lolliL s s' D₁ (LSeq.cutL s''.cons₁ D₂ E)
-  | .downL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .downL s (LSeq.cutL s' D (E.substS .weakening))
+  | .tensorL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .tensorL s (.cutL s'.cons₁.cons₁ D E)
+  | .plusL s' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; .plusL s (.cutL s'.cons₁ D₁ E) (.cutL s'.cons₁ D₂ E)
+  | .withL₁ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .withL₁ s (.cutL s'.cons₁ D E)
+  | .withL₂ s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .withL₂ s (.cutL s'.cons₁ D E)
+  | .lolliL s' s'' D₁ D₂, E => let ⟨s, s'⟩ := s.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; .lolliL s s' D₁ (.cutL s''.cons₁ D₂ E)
+  | .downL s' D, E => let ⟨s, s'⟩ := s.shift₁ s'; .downL s (.cutL s' D (E.substS .weakening))
   | .falseL u, _ => .falseL u
-  | .andL₁ u D, E => .andL₁ u (LSeq.cutL s D (E.substS .weakening))
-  | .andL₂ u D, E => .andL₂ u (LSeq.cutL s D (E.substS .weakening))
-  | .orL u D₁ D₂, E => .orL u (LSeq.cutL s D₁ (E.substS .weakening)) (LSeq.cutL s D₂ (E.substS .weakening))
-  | .impL u D₁ D₂, E => .impL u D₁ (LSeq.cutL s D₂ (E.substS .weakening))
-  | .upL u D, E => .upL u (LSeq.cutL s.cons₁ D E)
+  | .andL₁ u D, E => .andL₁ u (.cutL s D (E.substS .weakening))
+  | .andL₂ u D, E => .andL₂ u (.cutL s D (E.substS .weakening))
+  | .orL u D₁ D₂, E => .orL u (.cutL s D₁ (E.substS .weakening)) (.cutL s D₂ (E.substS .weakening))
+  | .impL u D₁ D₂, E => .impL u D₁ (.cutL s D₂ (E.substS .weakening))
+  | .upL u D, E => .upL u (.cutL s.cons₁ D E)
 
-  | D, LSeq.oneL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .oneL s (LSeq.cutL s'.flip D E)
+  | D, LSeq.oneL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .oneL s (.cutL s'.flip D E)
   | _, .zeroL (.there s') => let ⟨s, _⟩ := s.flip.shift₁ s'; .zeroL s
   | _, .topR => .topR
-  | D, .tensorR (.cons₁ s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'.flip; .tensorR s.flip (LSeq.cutL s'.flip D E₁) E₂
-  | D, .tensorR (.cons₂ s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'; .tensorR s E₁ (LSeq.cutL s'.flip D E₂)
-  | D, LSeq.tensorL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .tensorL s (LSeq.cutL s'.flip.cons₂.cons₂ D (E.substL .exchange₂))
-  | D, .plusR₁ E => .plusR₁ (LSeq.cutL s D E)
-  | D, .plusR₂ E => .plusR₂ (LSeq.cutL s D E)
-  | D, LSeq.plusL (.there s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; .plusL s (LSeq.cutL s'.flip.cons₂ D (E₁.substL .exchange)) (LSeq.cutL s'.flip.cons₂ D (E₂.substL .exchange))
-  | D, .withR E₁ E₂ => .withR (LSeq.cutL s D E₁) (LSeq.cutL s D E₂)
-  | D, LSeq.withL₁ (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .withL₁ s (LSeq.cutL s'.flip.cons₂ D (E.substL .exchange))
-  | D, LSeq.withL₂ (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .withL₂ s (LSeq.cutL s'.flip.cons₂ D (E.substL .exchange))
-  | D, .lolliR E => .lolliR (LSeq.cutL s.cons₂ D (E.substL .exchange))
-  | D, LSeq.lolliL (.there s') (.cons₁ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''.flip; .lolliL s s'.flip (LSeq.cutL s''.flip D E₁) E₂
-  | D, LSeq.lolliL (.there s') (.cons₂ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; .lolliL s s' E₁ (LSeq.cutL s''.flip.cons₂ D (E₂.substL .exchange))
-  | D, LSeq.downL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .downL s (LSeq.cutL s'.flip (D.substS .weakening) E)
+  | D, .tensorR (.cons₁ s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'.flip; .tensorR s.flip (.cutL s'.flip D E₁) E₂
+  | D, .tensorR (.cons₂ s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift s'; .tensorR s E₁ (.cutL s'.flip D E₂)
+  | D, LSeq.tensorL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .tensorL s (.cutL s'.flip.cons₂.cons₂ D (E.substL .exchange₂))
+  | D, .plusR₁ E => .plusR₁ (.cutL s D E)
+  | D, .plusR₂ E => .plusR₂ (.cutL s D E)
+  | D, LSeq.plusL (.there s') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; .plusL s (.cutL s'.flip.cons₂ D (E₁.substL .exchange)) (.cutL s'.flip.cons₂ D (E₂.substL .exchange))
+  | D, .withR E₁ E₂ => .withR (.cutL s D E₁) (.cutL s D E₂)
+  | D, LSeq.withL₁ (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .withL₁ s (.cutL s'.flip.cons₂ D (E.substL .exchange))
+  | D, LSeq.withL₂ (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .withL₂ s (.cutL s'.flip.cons₂ D (E.substL .exchange))
+  | D, .lolliR E => .lolliR (.cutL s.cons₂ D (E.substL .exchange))
+  | D, LSeq.lolliL (.there s') (.cons₁ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''.flip; .lolliL s s'.flip (.cutL s''.flip D E₁) E₂
+  | D, LSeq.lolliL (.there s') (.cons₂ s'') E₁ E₂ => let ⟨s, s'⟩ := s.flip.shift₁ s'; let ⟨s', s''⟩ := s'.shift s''; .lolliL s s' E₁ (.cutL s''.flip.cons₂ D (E₂.substL .exchange))
+  | D, LSeq.downL (.there s') E => let ⟨s, s'⟩ := s.flip.shift₁ s'; .downL s (.cutL s'.flip (D.substS .weakening) E)
   | _, .falseL u => .falseL u
-  | D, .andL₁ u E => .andL₁ u (LSeq.cutL s (D.substS .weakening) E)
-  | D, .andL₂ u E => .andL₂ u (LSeq.cutL s (D.substS .weakening) E)
-  | D, .orL u E₁ E₂ => .orL u (LSeq.cutL s (D.substS .weakening) E₁) (LSeq.cutL s (D.substS .weakening) E₂)
-  | D, .impL u E₁ E₂ => .impL u E₁ (LSeq.cutL s (D.substS .weakening) E₂)
-  | D, .upL u E => .upL u (LSeq.cutL s.cons₂ D (E.substL .exchange))
+  | D, .andL₁ u E => .andL₁ u (.cutL s (D.substS .weakening) E)
+  | D, .andL₂ u E => .andL₂ u (.cutL s (D.substS .weakening) E)
+  | D, .orL u E₁ E₂ => .orL u (.cutL s (D.substS .weakening) E₁) (.cutL s (D.substS .weakening) E₂)
+  | D, .impL u E₁ E₂ => .impL u E₁ (.cutL s (D.substS .weakening) E₂)
+  | D, .upL u E => .upL u (.cutL s.cons₂ D (E.substL .exchange))
 
   termination_by D E => (sizeOf A, D.sizeOf, E.sizeOf)
 
