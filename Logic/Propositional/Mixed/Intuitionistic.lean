@@ -29,15 +29,10 @@ end
 
 local notation "SCtx" => Structural.Ctx (Propn := SPropn)
 local notation "LCtx" => Linear.Ctx (Propn := LPropn)
-local notation "SHyp" => Structural.Hyp (Propn := SPropn)
-local notation "LHyp" => Linear.Hyp (Propn := LPropn)
-local notation "Split" => Linear.Split (Propn := LPropn)
-local notation "Split₁" => Linear.Split₁ (Propn := LPropn)
-local notation "SSubst" => Structural.Subst (Propn := SPropn)
-local notation "LSubst" => Linear.Subst (Propn := LPropn)
-local notation "SJudge" => Structural.Judge (Propn := SPropn)
-local notation "LJudge" => Linear.Judge (Propn := LPropn)
-local notation "SJudgeTrans" => Structural.JudgeTrans (Propn := SPropn)
+open Structural renaming Hyp → SHyp, Subst → SSubst, Judge → SJudge
+open Linear renaming Hyp → LHyp, Subst → LSubst, Judge → LJudge
+open Structural (JudgeTrans)
+open Linear (Split Split₁)
 
 /-! Natural Deduction -/
 
@@ -83,7 +78,7 @@ inductive LTrue : (Γ : SCtx) → (Δ : LCtx) → (A : LPropn) → Type
 
 end
 
-instance STrue.judgeTransHyp : SJudgeTrans SHyp STrue where
+instance STrue.judgeTransHyp : JudgeTrans SHyp STrue where
   transform := hyp
 
 instance LTrue.judge : LJudge (LTrue Γ) where
@@ -91,7 +86,7 @@ instance LTrue.judge : LJudge (LTrue Γ) where
 
 mutual
 
-def STrue.substS [j : SJudge J] [jt : SJudgeTrans J STrue] (γ : SSubst J Γ Γ') {A} : (D : STrue Γ A) → STrue Γ' A
+def STrue.substS [j : SJudge J] [jt : JudgeTrans J STrue] (γ : SSubst J Γ Γ') {A} : (D : STrue Γ A) → STrue Γ' A
   | .hyp u => jt.transform (γ u)
   | .trueI => .trueI
   | .falseE D => .falseE (D.substS γ)
@@ -105,7 +100,7 @@ def STrue.substS [j : SJudge J] [jt : SJudgeTrans J STrue] (γ : SSubst J Γ Γ'
   | .impE D D₁ => .impE (D.substS γ) (D₁.substS γ)
   | .upI D => .upI (D.substS γ)
 
-def LTrue.substS [j : SJudge J] [jt : SJudgeTrans J STrue] (γ : SSubst J Γ Γ') : (D : LTrue Γ Δ A) → LTrue Γ' Δ A
+def LTrue.substS [j : SJudge J] [jt : JudgeTrans J STrue] (γ : SSubst J Γ Γ') : (D : LTrue Γ Δ A) → LTrue Γ' Δ A
   | .hyp => .hyp
   | .oneI => .oneI
   | .oneE s D D₁ => .oneE s (D.substS γ) (D₁.substS γ)
@@ -206,7 +201,7 @@ inductive LUse : (Γ : SCtx) → (Δ : LCtx) → (A : LPropn) → Type
 
 end
 
-instance SUse.judgeTransHyp : SJudgeTrans SHyp SUse where
+instance SUse.judgeTransHyp : JudgeTrans SHyp SUse where
   transform := hyp
 
 instance LUse.judge : LJudge (LUse Γ) where
@@ -214,7 +209,7 @@ instance LUse.judge : LJudge (LUse Γ) where
 
 mutual
 
-def SVerif.substS [j : SJudge J] [jt : SJudgeTrans J SUse] (γ : SSubst J Γ Γ') {A} : (D : SVerif Γ A) → SVerif Γ' A
+def SVerif.substS [j : SJudge J] [jt : JudgeTrans J SUse] (γ : SSubst J Γ Γ') {A} : (D : SVerif Γ A) → SVerif Γ' A
   | .uv D => .uv (D.substS γ)
   | .trueI => .trueI
   | .falseE D => .falseE (D.substS γ)
@@ -225,13 +220,13 @@ def SVerif.substS [j : SJudge J] [jt : SJudgeTrans J SUse] (γ : SSubst J Γ Γ'
   | .impI D => .impI (D.substS γ.lift)
   | .upI D => .upI (D.substS γ)
 
-def SUse.substS [j : SJudge J] [jt : SJudgeTrans J SUse] (γ : SSubst J Γ Γ') {A} : (D : SUse Γ A) → SUse Γ' A
+def SUse.substS [j : SJudge J] [jt : JudgeTrans J SUse] (γ : SSubst J Γ Γ') {A} : (D : SUse Γ A) → SUse Γ' A
   | .hyp u => jt.transform (γ u)
   | .andE₁ D => .andE₁ (D.substS γ)
   | .andE₂ D => .andE₂ (D.substS γ)
   | .impE D D₁ => .impE (D.substS γ) (D₁.substS γ)
 
-def LVerif.substS [j : SJudge J] [jt : SJudgeTrans J SUse] (γ : SSubst J Γ Γ') : (D : LVerif Γ Δ A) → LVerif Γ' Δ A
+def LVerif.substS [j : SJudge J] [jt : JudgeTrans J SUse] (γ : SSubst J Γ Γ') : (D : LVerif Γ Δ A) → LVerif Γ' Δ A
   | .uv D => .uv (D.substS γ)
   | .oneI => .oneI
   | .oneE s D D₁ => .oneE s (D.substS γ) (D₁.substS γ)
@@ -249,7 +244,7 @@ def LVerif.substS [j : SJudge J] [jt : SJudgeTrans J SUse] (γ : SSubst J Γ Γ'
   | .falseE D => .falseE (D.substS γ)
   | .orE D D₁ D₂ => .orE (D.substS γ) (D₁.substS γ.lift) (D₂.substS γ.lift)
 
-def LUse.substS [j : SJudge J] [jt : SJudgeTrans J SUse] (γ : SSubst J Γ Γ') : (D : LUse Γ Δ A) → LUse Γ' Δ A
+def LUse.substS [j : SJudge J] [jt : JudgeTrans J SUse] (γ : SSubst J Γ Γ') : (D : LUse Γ Δ A) → LUse Γ' Δ A
   | .hyp => .hyp
   | .withE₁ D => .withE₁ (D.substS γ)
   | .withE₂ D => .withE₂ (D.substS γ)
@@ -439,7 +434,7 @@ instance seqJudgeLHyp : SeqLJudge fun _ => LHyp where
 
 mutual
 
-def SSeq.substS [j : SeqSJudge J] [jt : SJudgeTrans J SSeq] (γ : SSubst J Γ Γ') {A} : (D : SSeq Γ A) → SSeq Γ' A
+def SSeq.substS [j : SeqSJudge J] [jt : JudgeTrans J SSeq] (γ : SSubst J Γ Γ') {A} : (D : SSeq Γ A) → SSeq Γ' A
   | .id u => jt.transform (γ u)
   | .trueR => .trueR
   | .falseL u => j.cutSS γ u fun _ => .falseL
@@ -453,7 +448,7 @@ def SSeq.substS [j : SeqSJudge J] [jt : SJudgeTrans J SSeq] (γ : SSubst J Γ Γ
   | .impL u D₁ D₂ => j.cutSS γ u fun γ u => .impL u (D₁.substS γ) (D₂.substS γ.lift)
   | .upR D => .upR (D.substS γ)
 
-def LSeq.substS [j : SeqSJudge J] [jt : SJudgeTrans J SSeq] (γ : SSubst J Γ Γ') : (D : LSeq Γ Δ A) → LSeq Γ' Δ A
+def LSeq.substS [j : SeqSJudge J] [jt : JudgeTrans J SSeq] (γ : SSubst J Γ Γ') : (D : LSeq Γ Δ A) → LSeq Γ' Δ A
   | .id => .id
   | .oneR => .oneR
   | .oneL s D => .oneL s (D.substS γ)
@@ -530,7 +525,7 @@ def LSeq.id' : ∀ {A}, LSeq Γ (.cons .nil A) A
 
 end
 
-instance SSeq.judgeTransHyp : SJudgeTrans SHyp SSeq where
+instance SSeq.judgeTransHyp : JudgeTrans SHyp SSeq where
   transform := id'
 
 instance SSeq.judge : SJudge SSeq where
@@ -567,29 +562,9 @@ end
 @[simp]
 theorem LSeq.sizeOf_substL (δ : LSubst LHyp Δ Δ') (D : LSeq Γ Δ A) : (D.substL δ).sizeOf = D.sizeOf :=
   match Δ, A, D with
-  | _, _, oneL ..
-  | _, _, zeroL _
-  | _, _, topR
-  | _, _, tensorR ..
-  | _, _, tensorL ..
-  | _, _, plusR₁ _
-  | _, _, plusR₂ _
-  | _, _, plusL ..
-  | _, _, withR ..
-  | _, _, withL₁ ..
-  | _, _, withL₂ ..
-  | _, _, lolliR _
-  | _, _, lolliL ..
-  | _, _, downL ..
-  | _, _, falseL _
-  | _, _, andL₁ ..
-  | _, _, andL₂ ..
-  | _, _, orL ..
-  | _, _, impL ..
-  | _, _, upL .. => by simp! only [sizeOf_substL]
+  | _, _, oneL .. | _, _, zeroL _ | _, _, topR | _, _, tensorR .. | _, _, tensorL .. | _, _, plusR₁ _ | _, _, plusR₂ _ | _, _, plusL .. | _, _, withR .. | _, _, withL₁ .. | _, _, withL₂ .. | _, _, lolliR _ | _, _, lolliL .. | _, _, downL .. | _, _, falseL _ | _, _, andL₁ .. | _, _, andL₂ .. | _, _, orL .. | _, _, impL .. | _, _, upL .. => by simp! only [sizeOf_substL]
   | _, _, id => let .cons s .mk .nil := δ; let .refl _ := s.eq_triv₁; rfl
-  | _, _, oneR
-  | _, _, downR _ => let .nil := δ; rfl
+  | _, _, oneR | _, _, downR _ => let .nil := δ; rfl
 
 mutual
 

@@ -19,12 +19,9 @@ inductive Propn
 
 local notation "SCtx" => Structural.Ctx (Propn := Propn)
 local notation "LCtx" => Linear.Ctx (Propn := Propn)
-local notation "SHyp" => Structural.Hyp (Propn := Propn)
-local notation "LHyp" => Linear.Hyp (Propn := Propn)
-local notation "Split" => Linear.Split (Propn := Propn)
-local notation "Split₁" => Linear.Split₁ (Propn := Propn)
-local notation "SSubst" => Structural.Subst (Propn := Propn)
-local notation "LSubst" => Linear.Subst (Propn := Propn)
+open Structural renaming Hyp → SHyp, Subst → SSubst
+open Linear renaming Hyp → LHyp, Subst → LSubst
+open Linear (Split Split₁)
 
 /-! Sequent Calculus -/
 

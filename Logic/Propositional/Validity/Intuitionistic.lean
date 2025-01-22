@@ -16,13 +16,9 @@ inductive Propn
 
 local notation "SCtx" => Structural.Ctx (Propn := Propn)
 local notation "LCtx" => Linear.Ctx (Propn := Propn)
-local notation "SHyp" => Structural.Hyp (Propn := Propn)
-local notation "LHyp" => Linear.Hyp (Propn := Propn)
-local notation "Split" => Linear.Split (Propn := Propn)
-local notation "Split₁" => Linear.Split₁ (Propn := Propn)
-local notation "SSubst" => Structural.Subst (Propn := Propn)
-local notation "LSubst" => Linear.Subst (Propn := Propn)
-local notation "LJudge" => Linear.Judge (Propn := Propn)
+open Structural renaming Hyp → SHyp, Subst → SSubst
+open Linear renaming Hyp → LHyp, Subst → LSubst
+open Linear (Split Split₁ Judge)
 
 /-! Natural Deduction -/
 
@@ -48,7 +44,7 @@ inductive True : (Γ : SCtx) → (Δ : LCtx) → (A : Propn) → Type
   | bangI (D : True Γ .nil A) : True Γ .nil A.bang
   | bangE (s : Split Δ Δ₁ Δ₂) (D : True Γ Δ₁ A.bang) (D₁ : True (Γ.cons A) Δ₂ C) : True Γ Δ C
 
-instance True.judge : LJudge (True Γ) where
+instance True.judge : Judge (True Γ) where
   hyp := hyp
 
 def True.substS (γ : SSubst SHyp Γ Γ') : (D : True Γ Δ A) → True Γ' Δ A
@@ -124,7 +120,7 @@ inductive Use : (Γ : SCtx) → (Δ : LCtx) → (A : Propn) → Type
 
 end
 
-instance Use.judge : LJudge (Use Γ) where
+instance Use.judge : Judge (Use Γ) where
   hyp := hyp
 
 mutual
@@ -193,7 +189,7 @@ def Verif.uv' (D : Use Γ Δ A) : Verif Γ Δ A :=
   | .lolli .. => lolliI (uv' (.lolliE (.cons₂ .triv₁) D (uv' .hyp)))
   | .bang _ => bangE .triv₁ D (bangI (uv' (.validHyp .here)))
 
-instance Verif.judge : LJudge (Verif Γ) where
+instance Verif.judge : Judge (Verif Γ) where
   hyp := uv' .hyp
 
 mutual
@@ -250,7 +246,7 @@ inductive Seq : (Γ : SCtx) → (Δ : LCtx) → (A : Propn) → Type
   | bangL (s : Split₁ Δ A.bang Δ') (D : Seq (Γ.cons A) Δ' C) : Seq Γ Δ C
 
 class SeqJudge (J : (Γ : SCtx) → (Δ : LCtx) → (A : Propn) → Type) where
-  [judge : LJudge (J Γ)]
+  [judge : Judge (J Γ)]
   cut (s : Split Δ Δ₁ Δ₂) (D' : J Γ Δ₁ A) (D : ∀ {Δ}, (s : Split₁ Δ A Δ₂) → Seq Γ Δ C) : Seq Γ Δ C
   weaken (D : J Γ Δ A) : J (Γ.cons B) Δ A
 
