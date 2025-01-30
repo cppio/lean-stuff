@@ -13,9 +13,9 @@ protected def I.lift₂ (f : Bool → Bool → Bool) : I → I → I :=
       congr
     exact funext λ _ => Quot.sound h
 
-def I.and : I → I → I := I.lift₂ _root_.and
-def I.or : I → I → I := I.lift₂ _root_.or
-def I.not : I → I := I.lift₁ _root_.not
+def I.and : I → I → I := I.lift₂ Bool.and
+def I.or : I → I → I := I.lift₂ Bool.or
+def I.not : I → I := I.lift₁ Bool.not
 
 def Path (x y : α) := { f : I → α // f i0 = x ∧ f i1 = y }
 
