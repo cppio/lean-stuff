@@ -186,7 +186,6 @@ def Exp.ofNat : (n : Nat) → Exp Γ .nat
   | .zero   => zero
   | .succ n => succ (ofNat n)
 
-@[simp]
 def Val.ofNat : (n : Nat) → Val (.ofNat (Γ := Γ) n)
   | .zero   => zero
   | .succ n => succ (ofNat n)
@@ -309,23 +308,23 @@ inductive Val : (Γ : Ctx) → (A : Typ) → Type
   | inl  (V : Val Γ A₁)                  : Val Γ (.sum A₁ A₂)
   | inr  (V : Val Γ A₂)                  : Val Γ (.sum A₁ A₂)
   | pair (V₁ : Val Γ A₁) (V₂ : Val Γ A₂) : Val Γ (.prod A₁ A₂)
-  | lam  (M : Exp (Γ.cons A₁) A₂)        : Val Γ (.arr A₁ A₂)
+  | lam  (C : Cmp (Γ.cons A₁) A₂)        : Val Γ (.arr A₁ A₂)
   | zero                                 : Val Γ .nat
   | succ (V : Val Γ .nat)                : Val Γ .nat
 
-inductive Exp : (Γ : Ctx) → (A : Typ) → Type
-  | ret (V : Val Γ A)                          : Exp Γ A
-  | let (M : Exp Γ A) (M' : Exp (Γ.cons A) A') : Exp Γ A'
+inductive Cmp : (Γ : Ctx) → (A : Typ) → Type
+  | ret (V : Val Γ A)                          : Cmp Γ A
+  | let (C : Cmp Γ A) (C' : Cmp (Γ.cons A) A') : Cmp Γ A'
 
-  | absurd (V : Val Γ .void)                                                          : Exp Γ A
-  | case   (V : Val Γ (.sum A₁ A₂)) (M₁ : Exp (Γ.cons A₁) A) (M₂ : Exp (Γ.cons A₂) A) : Exp Γ A
-  | fst    (V : Val Γ (.prod A₁ A₂))                                                  : Exp Γ A₁
-  | snd    (V : Val Γ (.prod A₁ A₂))                                                  : Exp Γ A₂
-  | ap     (V : Val Γ (.arr A₁ A₂)) (V₁ : Val Γ A₁)                                   : Exp Γ A₂
-  | iter   (V : Val Γ .nat) (M₁ : Exp Γ A) (M₂ : Exp (Γ.cons A) A)                    : Exp Γ A
+  | absurd (V : Val Γ .void)                                                          : Cmp Γ A
+  | case   (V : Val Γ (.sum A₁ A₂)) (C₁ : Cmp (Γ.cons A₁) A) (C₂ : Cmp (Γ.cons A₂) A) : Cmp Γ A
+  | fst    (V : Val Γ (.prod A₁ A₂))                                                  : Cmp Γ A₁
+  | snd    (V : Val Γ (.prod A₁ A₂))                                                  : Cmp Γ A₂
+  | ap     (V : Val Γ (.arr A₁ A₂)) (V₁ : Val Γ A₁)                                   : Cmp Γ A₂
+  | iter   (V : Val Γ .nat) (C₁ : Cmp Γ A) (C₂ : Cmp (Γ.cons A) A)                    : Cmp Γ A
 
-  | print (V : Val Γ .nat) : Exp Γ .unit
-  | read                   : Exp Γ (.sum .unit .nat)
+  | print (V : Val Γ .nat) : Cmp Γ .unit
+  | read                   : Cmp Γ (.sum .unit .nat)
 
 end
 
@@ -339,21 +338,21 @@ def Val.rename (γ : Renaming Γ Γ') : (V : Val Γ' A) → Val Γ A
   | .inl  V     => .inl  (V.rename γ)
   | .inr  V     => .inr  (V.rename γ)
   | .pair V₁ V₂ => .pair (V₁.rename γ) (V₂.rename γ)
-  | .lam  M     => .lam  (M.rename γ.weaken)
+  | .lam  C     => .lam  (C.rename γ.weaken)
   | .zero       => .zero
   | .succ V     => .succ (V.rename γ)
 
 @[simp]
-def Exp.rename (γ : Renaming Γ Γ') : (M : Exp Γ' A) → Exp Γ A
+def Cmp.rename (γ : Renaming Γ Γ') : (C : Cmp Γ' A) → Cmp Γ A
   | .ret V    => .ret (V.rename γ)
-  | .let M M' => .let (M.rename γ) (M'.rename γ.weaken)
+  | .let C C' => .let (C.rename γ) (C'.rename γ.weaken)
 
   | .absurd V       => .absurd (V.rename γ)
-  | .case   V M₁ M₂ => .case   (V.rename γ) (M₁.rename γ.weaken) (M₂.rename γ.weaken)
+  | .case   V C₁ C₂ => .case   (V.rename γ) (C₁.rename γ.weaken) (C₂.rename γ.weaken)
   | .fst    V       => .fst    (V.rename γ)
   | .snd    V       => .snd    (V.rename γ)
   | .ap     V V₁    => .ap     (V.rename γ) (V₁.rename γ)
-  | .iter   V M₁ M₂ => .iter   (V.rename γ) (M₁.rename γ) (M₂.rename γ.weaken)
+  | .iter   V C₁ C₂ => .iter   (V.rename γ) (C₁.rename γ) (C₂.rename γ.weaken)
 
   | .print V => .print (V.rename γ)
   | .read    => .read
@@ -363,14 +362,14 @@ end
 @[simp]
 theorem Val.rename_rename {γ : Renaming Γ Γ'} {γ' : Renaming Γ' Γ''} : (rename γ' V).rename γ = V.rename (γ'.map (·.rename γ)) := by
   induction V
-    using Val.rec (motive_2 := fun Γ'' A M => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Renaming Γ' Γ''} → (M.rename γ').rename γ = M.rename (γ'.map (·.rename γ)))
+    using Val.rec (motive_2 := fun Γ'' A C => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Renaming Γ' Γ''} → (C.rename γ').rename γ = C.rename (γ'.map (·.rename γ)))
     generalizing Γ Γ'
     <;> simp [*]
 
 @[simp]
-theorem Exp.rename_rename {γ : Renaming Γ Γ'} {γ' : Renaming Γ' Γ''} : (rename γ' M).rename γ = M.rename (γ'.map (·.rename γ)) := by
-  induction M
-    using Exp.rec (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Renaming Γ' Γ''} → (V.rename γ').rename γ = V.rename (γ'.map (·.rename γ)))
+theorem Cmp.rename_rename {γ : Renaming Γ Γ'} {γ' : Renaming Γ' Γ''} : (rename γ' C).rename γ = C.rename (γ'.map (·.rename γ)) := by
+  induction C
+    using Cmp.rec (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Renaming Γ' Γ''} → (V.rename γ').rename γ = V.rename (γ'.map (·.rename γ)))
     generalizing Γ Γ'
     <;> simp [*]
 
@@ -379,11 +378,11 @@ def Val.weaken : (V : Val Γ A) → Val (Γ.cons A') A :=
   rename (.map .succ .id)
 
 @[simp]
-def Exp.weaken : (M : Exp Γ A) → Exp (Γ.cons A') A :=
+def Cmp.weaken : (C : Cmp Γ A) → Cmp (Γ.cons A') A :=
   rename (.map .succ .id)
 
 @[simp]
-def Exp.weaken₁ : (M : Exp (.cons Γ A') A) → Exp ((Γ.cons A'').cons A') A :=
+def Cmp.weaken₁ : (C : Cmp (.cons Γ A') A) → Cmp ((Γ.cons A'').cons A') A :=
   rename (.cons (.map (·.succ.succ) .id) .zero)
 
 inductive Subst (Γ : Ctx) : (Γ' : Ctx) → Type
@@ -443,21 +442,21 @@ def Val.subst (γ : Subst Γ Γ') : (V : Val Γ' A) → Val Γ A
   | .inl  V     => .inl  (V.subst γ)
   | .inr  V     => .inr  (V.subst γ)
   | .pair V₁ V₂ => .pair (V₁.subst γ) (V₂.subst γ)
-  | .lam  M     => .lam  (M.subst γ.weaken)
+  | .lam  C     => .lam  (C.subst γ.weaken)
   | .zero       => .zero
   | .succ V     => .succ (V.subst γ)
 
 @[simp]
-def Exp.subst (γ : Subst Γ Γ') : (M : Exp Γ' A) → Exp Γ A
+def Cmp.subst (γ : Subst Γ Γ') : (C : Cmp Γ' A) → Cmp Γ A
   | .ret V    => .ret (V.subst γ)
-  | .let M M' => .let (M.subst γ) (M'.subst γ.weaken)
+  | .let C C' => .let (C.subst γ) (C'.subst γ.weaken)
 
   | .absurd V       => .absurd (V.subst γ)
-  | .case   V M₁ M₂ => .case   (V.subst γ) (M₁.subst γ.weaken) (M₂.subst γ.weaken)
+  | .case   V C₁ C₂ => .case   (V.subst γ) (C₁.subst γ.weaken) (C₂.subst γ.weaken)
   | .fst    V       => .fst    (V.subst γ)
   | .snd    V       => .snd    (V.subst γ)
   | .ap     V V₁    => .ap     (V.subst γ) (V₁.subst γ)
-  | .iter   V M₁ M₂ => .iter   (V.subst γ) (M₁.subst γ) (M₂.subst γ.weaken)
+  | .iter   V C₁ C₂ => .iter   (V.subst γ) (C₁.subst γ) (C₂.subst γ.weaken)
 
   | .print V => .print (V.subst γ)
   | .read    => .read
@@ -467,13 +466,13 @@ end
 @[simp]
 theorem Val.subst_id : subst (.ofRenaming .var .id) V = V := by
   induction V
-    using Val.rec (motive_2 := fun Γ A M => M.subst (.ofRenaming .var .id) = M)
+    using Val.rec (motive_2 := fun Γ A C => C.subst (.ofRenaming .var .id) = C)
     <;> simp_all
 
 @[simp]
-theorem Exp.subst_id : subst (.ofRenaming .var .id) M = M := by
-  induction M
-    using Exp.rec (motive_1 := fun Γ A V => V.subst (.ofRenaming .var .id) = V)
+theorem Cmp.subst_id : subst (.ofRenaming .var .id) C = C := by
+  induction C
+    using Cmp.rec (motive_1 := fun Γ A V => V.subst (.ofRenaming .var .id) = V)
     <;> simp_all
 
 @[simp]
@@ -481,44 +480,44 @@ theorem Val.subst_nil : subst .nil V = V :=
   subst_id
 
 @[simp]
-theorem Exp.subst_nil : subst .nil M = M :=
+theorem Cmp.subst_nil : subst .nil C = C :=
   subst_id
 
 @[simp]
-theorem Exp.subst_cons_nil_zero : subst (.cons .nil (.var .zero)) M = M :=
+theorem Cmp.subst_cons_nil_zero : subst (.cons .nil (.var .zero)) C = C :=
   subst_id
 
 @[simp]
 theorem Val.subst_rename {γ : Subst Γ Γ'} {γ' : Renaming Γ' Γ''} : (rename γ' V).subst γ = V.subst (.ofRenaming (Var.subst γ) γ') := by
   induction V
-    using Val.rec (motive_2 := fun Γ'' A M => ∀ {Γ Γ'}, {γ : Subst Γ Γ'} → {γ' : Renaming Γ' Γ''} → (M.rename γ').subst γ = M.subst (.ofRenaming (Var.subst γ) γ'))
+    using Val.rec (motive_2 := fun Γ'' A C => ∀ {Γ Γ'}, {γ : Subst Γ Γ'} → {γ' : Renaming Γ' Γ''} → (C.rename γ').subst γ = C.subst (.ofRenaming (Var.subst γ) γ'))
     generalizing Γ Γ'
     <;> simp [*]
 
 @[simp]
-theorem Exp.subst_rename {γ : Subst Γ Γ'} {γ' : Renaming Γ' Γ''} : (rename γ' M).subst γ = M.subst (.ofRenaming (Var.subst γ) γ') := by
-  induction M
-    using Exp.rec (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, {γ : Subst Γ Γ'} → {γ' : Renaming Γ' Γ''} → (V.rename γ').subst γ = V.subst (.ofRenaming (Var.subst γ) γ'))
+theorem Cmp.subst_rename {γ : Subst Γ Γ'} {γ' : Renaming Γ' Γ''} : (rename γ' C).subst γ = C.subst (.ofRenaming (Var.subst γ) γ') := by
+  induction C
+    using Cmp.rec (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, {γ : Subst Γ Γ'} → {γ' : Renaming Γ' Γ''} → (V.rename γ').subst γ = V.subst (.ofRenaming (Var.subst γ) γ'))
     generalizing Γ Γ'
     <;> simp [*]
 
 @[simp]
 theorem Val.rename_subst {γ : Renaming Γ Γ'} {γ' : Subst Γ' Γ''} : (subst γ' V).rename γ = V.subst (.map (.rename γ) γ') := by
   induction V
-    using Val.rec (motive_2 := fun Γ'' A M => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Subst Γ' Γ''} → (M.subst γ').rename γ = M.subst (.map (.rename γ) γ'))
+    using Val.rec (motive_2 := fun Γ'' A C => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Subst Γ' Γ''} → (C.subst γ').rename γ = C.subst (.map (.rename γ) γ'))
     generalizing Γ Γ'
     <;> simp [*]
 
 @[simp]
-theorem Exp.rename_subst {γ : Renaming Γ Γ'} {γ' : Subst Γ' Γ''} : (subst γ' M).rename γ = M.subst (.map (.rename γ) γ') := by
-  induction M
-    using Exp.rec (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Subst Γ' Γ''} → (V.subst γ').rename γ = V.subst (.map (.rename γ) γ'))
+theorem Cmp.rename_subst {γ : Renaming Γ Γ'} {γ' : Subst Γ' Γ''} : (subst γ' C).rename γ = C.subst (.map (.rename γ) γ') := by
+  induction C
+    using Cmp.rec (motive_1 := fun Γ'' A V => ∀ {Γ Γ'}, {γ : Renaming Γ Γ'} → {γ' : Subst Γ' Γ''} → (V.subst γ').rename γ = V.subst (.map (.rename γ) γ'))
     generalizing Γ Γ'
     <;> simp [*]
 
 @[simp]
-def Exp.sub (M : Exp (.cons Γ A') A) (V : Val Γ A') : Exp Γ A :=
-  subst (.cons (.ofRenaming .var .id) V) M
+def Cmp.sub (C : Cmp (.cons Γ A') A) (V : Val Γ A') : Cmp Γ A :=
+  subst (.cons (.ofRenaming .var .id) V) C
 
 @[simp]
 def Val.ofNat : (n : Nat) → Val Γ .nat
@@ -531,19 +530,19 @@ def Val.toNat : (V : Val .nil .nat) → Nat
   | succ V => .succ V.toNat
 
 def State (A : Typ) : Type :=
-  List Nat × Exp .nil A × List Nat
+  List Nat × Cmp .nil A × List Nat
 
 inductive Steps : (S S' : State A) → Type
-  | let₁ (s : Steps (I, M, O) (I', M', O')) : Steps (I, .let M M'',      O) (I', .let M' M'', O')
-  | let₂                                    : Steps (I, .let (.ret V) M, O) (I, M.sub V,      O)
+  | let₁ (s : Steps (I, C, O) (I', C', O')) : Steps (I, .let C C'',      O) (I', .let C' C'', O')
+  | let₂                                    : Steps (I, .let (.ret V) C, O) (I, C.sub V,      O)
 
-  | case_inl  : Steps (I, .case (.inl V) M₁ M₂,  O) (I, M₁.sub V,                O)
-  | case_inr  : Steps (I, .case (.inr V) M₁ M₂,  O) (I, M₂.sub V,                O)
+  | case_inl  : Steps (I, .case (.inl V) C₁ C₂,  O) (I, C₁.sub V,                O)
+  | case_inr  : Steps (I, .case (.inr V) C₁ C₂,  O) (I, C₂.sub V,                O)
   | fst_pair  : Steps (I, .fst (.pair V₁ V₂),    O) (I, .ret V₁,                 O)
   | snd_pair  : Steps (I, .snd (.pair V₁ V₂),    O) (I, .ret V₂,                 O)
-  | ap_lam    : Steps (I, .ap (.lam M) V₁,       O) (I, M.sub V₁,                O)
-  | iter_zero : Steps (I, .iter .zero M₁ M₂,     O) (I, M₁,                      O)
-  | iter_succ : Steps (I, .iter (.succ V) M₁ M₂, O) (I, .let (.iter V M₁ M₂) M₂, O)
+  | ap_lam    : Steps (I, .ap (.lam C) V₁,       O) (I, C.sub V₁,                O)
+  | iter_zero : Steps (I, .iter .zero C₁ C₂,     O) (I, C₁,                      O)
+  | iter_succ : Steps (I, .iter (.succ V) C₁ C₂, O) (I, .let (.iter V C₁ C₂) C₂, O)
 
   | print : Steps (I,      .print V, O) (I,  .ret .triv,             V.toNat :: O)
   | read₁ : Steps ([],     .read,    O) ([], .ret (.inl .triv),      O)
@@ -580,10 +579,10 @@ instance : Subsingleton (Progress S) where
     | .steps s₁, .steps s₂ => match Subsingleton.allEq (α := Σ _, _) ⟨_, s₁⟩ ⟨_, s₂⟩ with | rfl => rfl
 
 def progress : (S : State A) → Progress S
-  | (_, M, _) => progress M
-  where progress {A I O} : (M : Exp _ A) → Progress (I, M, O)
+  | (_, C, _) => progress C
+  where progress {A I O} : (C : Cmp _ A) → Progress (I, C, O)
     | .ret V    => .final .ret
-    | .let M M' => match M, progress M with
+    | .let C C' => match C, progress C with
                    | _, .steps s    => .steps (.let₁ s)
                    | _, .final .ret => .steps .let₂
 
@@ -618,6 +617,72 @@ end Reduces
 
 end Modal
 
+namespace CBPV
+
+mutual
+
+inductive ValTyp
+  | U    (X : CmpTyp)
+  | void
+  | unit
+  | sum  (A₁ A₂ : ValTyp)
+  | prod (A₁ A₂ : ValTyp)
+  | nat
+
+inductive CmpTyp
+  | F    (A : ValTyp)
+  | unit
+  | prod (X₁ X₂ : CmpTyp)
+  | arr  (A : ValTyp) (X : CmpTyp)
+
+end
+
+inductive Ctx
+  | nil
+  | cons (Γ : Ctx) (A : ValTyp)
+
+inductive Var (A : ValTyp) : (Γ : Ctx) → Type
+  | zero               : Var A (.cons Γ A)
+  | succ (x : Var A Γ) : Var A (.cons Γ A')
+
+mutual
+
+inductive Val : (Γ : Ctx) → (A : ValTyp) → Type
+  | var (x : Var A Γ) : Val Γ A
+
+  | susp (C : Cmp Γ X)                   : Val Γ (.U X)
+  | triv                                 : Val Γ .unit
+  | inl  (V : Val Γ A₁)                  : Val Γ (.sum A₁ A₂)
+  | inr  (V : Val Γ A₂)                  : Val Γ (.sum A₁ A₂)
+  | pair (V₁ : Val Γ A₁) (V₂ : Val Γ A₂) : Val Γ (.prod A₁ A₂)
+  | zero                                 : Val Γ .nat
+  | succ (V : Val Γ .nat)                : Val Γ .nat
+
+inductive Cmp : (Γ : Ctx) → (X : CmpTyp) → Type
+  | force  (V : Val Γ (.U X))                                                         : Cmp Γ X
+  | absurd (V : Val Γ .void)                                                          : Cmp Γ X
+  | check  (V : Val Γ .unit) (C : Cmp Γ X)                                            : Cmp Γ X
+  | case   (V : Val Γ (.sum A₁ A₂)) (C₁ : Cmp (Γ.cons A₁) X) (C₂ : Cmp (Γ.cons A₂) X) : Cmp Γ X
+  | split  (V : Val Γ (.prod A₁ A₂)) (C : Cmp (Γ.cons A₁ |>.cons A₂) X)               : Cmp Γ X
+  --| iter   (V : Val Γ .nat) (C₁ : Cmp Γ A) (C₂ : Cmp (Γ.cons A) A)                    : Cmp Γ A
+
+  | ret  (V : Val Γ A)                              : Cmp Γ (.F A)
+  | bind (C : Cmp Γ (.F A)) (C' : Cmp (Γ.cons A) X) : Cmp Γ X
+  | triv                                            : Cmp Γ .unit
+  | pair (C₁ : Cmp Γ X₁) (C₂ : Cmp Γ X₂)            : Cmp Γ (.prod X₁ X₂)
+  | fst  (C : Cmp Γ (.prod X₁ X₂))                  : Cmp Γ X₁
+  | snd  (C : Cmp Γ (.prod X₁ X₂))                  : Cmp Γ X₂
+  | lam  (C : Cmp (Γ.cons A) X)                     : Cmp Γ (.arr A X)
+  | ap   (C : Cmp Γ (.arr A X)) (V : Val Γ A)       : Cmp Γ X
+
+  | print (V : Val Γ .nat) : Cmp Γ (.F .unit)
+  | read                   : Cmp Γ (.F (.sum .unit .nat))
+
+end
+
+end CBPV
+
+/-
 namespace CBV_to_Modal
 
 @[simp]
@@ -679,7 +744,7 @@ theorem translateVal_ofNat : translateVal (.ofNat n) = .ofNat (Γ := Γ) n :=
 @[simp]
 theorem translateVal_toNat : (translateVal V).toNat = V.toNat :=
   match V with
-  | .zero   => by simp
+  | .zero   => rfl
   | .succ _ => by simp; exact translateVal_toNat
 
 end CBV_to_Modal
@@ -914,3 +979,4 @@ def translateSteps : (s : CBV.Steps S S') → Modal.Reduces (translateState S) (
   | .read₂    => .step .read₂ <| by simp; exact .refl
 
 end CBV_to_Modal'
+-/

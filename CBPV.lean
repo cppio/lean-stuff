@@ -1,5 +1,3 @@
-import Common.Structural
-
 mutual
 
 inductive TypP
@@ -63,7 +61,6 @@ def weaken (γ : Renaming Γ Γ') : Renaming (Γ.cons A) (Γ'.cons A)
   | _, .zero   => .zero
   | _, .succ x => .succ (γ x)
 
-@[structural]
 mutual
 
 @[simp]
@@ -115,7 +112,6 @@ def weaken (γ : Subst Γ Γ') : Subst (Γ.cons A) (Γ'.cons A)
   | _, .zero   => .var .zero
   | _, .succ x => .weaken (γ x)
 
-@[structural]
 mutual
 
 @[simp]
@@ -247,7 +243,6 @@ def comp {F : (C : ExpN .nil X) → ExpN .nil Y} (f : ∀ {C C'}, (s : Steps C C
 
 end Reduces
 
-@[structural]
 mutual
 
 def HTP : (A : TypP) → (V : ExpP .nil A) → Type

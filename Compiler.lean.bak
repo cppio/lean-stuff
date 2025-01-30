@@ -682,8 +682,23 @@ theorem translateVal_toNat : (translateVal V).toNat = V.toNat :=
   | .zero   => by simp
   | .succ _ => by simp; exact translateVal_toNat
 
+inductive Equiv : (S S' : Modal.Val .nil A) → Type
+  | triv : Equiv .triv .triv
+  | inl : Equiv V V' → Equiv (.inl V) (.inl V')
+  | inr : Equiv V V' → Equiv (.inl V) (.inl V')
+  | pair : Equiv V₁ V₁' → Equiv V₂ V₂' → Equiv (.pair V₁ V₂) (.pair V₁' V₂')
+  | zero : Equiv .zero .zero
+  | succ : Equiv V V' → Equiv (.succ V) (.succ V')
+
+  | lam : sorry → Equiv (.lam V) (.lam V')
+
+  /-
+  | lam  (M : Exp (Γ.cons A₁) A₂)        : Val Γ (.arr A₁ A₂)
+  -/
+
 end CBV_to_Modal
 
+/-
 namespace CBV_to_Modal'
 
 inductive TranslateExp Γ A
@@ -914,3 +929,4 @@ def translateSteps : (s : CBV.Steps S S') → Modal.Reduces (translateState S) (
   | .read₂    => .step .read₂ <| by simp; exact .refl
 
 end CBV_to_Modal'
+-/
