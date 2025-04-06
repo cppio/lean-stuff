@@ -819,6 +819,15 @@ theorem Tm.subst'_nil : @subst' .nil .nil δ .nil .nil γ τ e = e.cast rfl (by 
   cases show δ = .var from funext nofun
   simp
 
+theorem hcongrArg₂ {α : Sort u} {β : α → Sort v} {γ : ∀ a, β a → Sort w} (f : ∀ a b, γ a b) {a₁ a₂ : α} (ha : a₁ = a₂) {b₁ : β a₁} {b₂ : β a₂} (hb : HEq b₁ b₂) : HEq (f a₁ b₁) (f a₂ b₂) :=
+  by cases ha; cases hb; rfl
+
+theorem Tm.rec_cast {τ τ' : Tp Δ} (h : τ = τ') {var lam app gen inst} {t : Tm Δ Γ τ} : @rec motive @var @lam @app @gen @inst Δ Γ τ' (h ▸ t) = (h.rec (motive := fun τ' _ => _ = motive Δ Γ τ' _) rfl).mp (@rec motive @var @lam @app @gen @inst Δ Γ τ t) :=
+  eq_of_heq (.trans (hcongrArg₂ _ h.symm (h.rec (.refl _))) (have := h.rec (motive := fun τ' _ => _ = motive Δ Γ τ' _) rfl; (this.rec (.refl _) : HEq _ (this.mp _))))
+
+theorem Tm.inst_inj_cast {τ₂' : Tp Δ} (hτ : Tp.subst (.mk τ₁') τ₁ = Tp.subst (.mk τ₂') τ₂) (he : hτ ▸ @inst Δ Γ τ₁ e₁ τ₁' = @inst Δ Γ τ₂ e₂ τ₂') : τ₁ = τ₂ ∧ τ₁' = τ₂' :=
+  (rec_cast hτ).mp (Tm.noConfusion he) fun _ _ hτ _ hτ' => ⟨eq_of_heq hτ, eq_of_heq hτ'⟩
+
 inductive Tm.Steps : (e e' : Tm .nil .nil τ) → Type
   | app (s : e.Steps e') : (app e e₁).Steps (app e' e₁)
   | app_lam : Steps (app (lam e) e₁) (e.subst (Subst.mk e₁))
@@ -831,7 +840,7 @@ inductive Tm.Val : (e : Tm .nil .nil τ) → Type
 
 theorem Tm.Val.not_steps : (v : Val e) → (s : Steps e e') → False
   | @lam τ₁ τ₂ e, s =>
-    have {τ} {e₁ e' : Tm .nil .nil τ} (h : τ = τ₁.arr τ₂) (h' : h ▸ e₁ = e.lam) (s : Tm.Steps e₁ e') : False := by
+    have {τ} {e₁ e' : Tm .nil .nil τ} (h : τ = τ₁.arr τ₂) (h' : h ▸ e₁ = e.lam) (s : Steps e₁ e') : False := by
       cases s with
       | app => nomatch h
       | app_lam => nomatch h
@@ -839,13 +848,48 @@ theorem Tm.Val.not_steps : (v : Val e) → (s : Steps e e') → False
       | inst_gen => rename_i τ _ _ ; cases τ; rename_i α _; cases α; cases h; nomatch h'; nomatch h; cases h; nomatch h'; nomatch h
     this rfl rfl s
   | @gen τ e, s =>
-    have {τ₁} {e₁ e' : Tm .nil .nil τ₁} (h : τ₁ = τ.all) (h' : h ▸ e₁ = e.gen) (s : Tm.Steps e₁ e') : False := by
+    have {τ₁} {e₁ e' : Tm .nil .nil τ₁} (h : τ₁ = τ.all) (h' : h ▸ e₁ = e.gen) (s : Steps e₁ e') : False := by
       cases s with
       | app => nomatch h
       | app_lam => nomatch h
       | inst => rename_i τ _ _ _ _ ; cases τ; rename_i α _ _ _; cases α; cases h; nomatch h'; nomatch h; nomatch h; nomatch h
       | inst_gen => rename_i τ _ _ ; cases τ; rename_i α _; cases α; cases h; nomatch h'; nomatch h; nomatch h; nomatch h
     this rfl rfl s
+
+theorem Tm.Steps.deterministic : (s₁ : Steps e e₁) → (s₂ : Steps e e₂) → e₁ = e₂
+  | app s₁, app s₂ => s₁.deterministic s₂ ▸ rfl
+  | app s₁, app_lam => nomatch Val.lam.not_steps s₁
+  | app_lam, app s₂ => nomatch Val.lam.not_steps s₂
+  | app_lam, app_lam => rfl
+  | @inst τ e' τ' e₁' s₁, s₂ =>
+    have {τ₂} (h : τ₂ = τ.subst (.mk τ')) {e e₂} (h' : h ▸ e = e'.inst τ') (s₂ : Steps e e₂) : e₁'.inst τ' = h ▸ e₂ := by
+      cases s₂ with
+      | app => nomatch h
+      | app_lam => nomatch h
+      | inst s₂ =>
+        have ⟨_, _⟩ := inst_inj_cast h h'
+        subst_eqs
+        cases s₁.deterministic s₂
+        rfl
+      | inst_gen =>
+        have ⟨_, _⟩ := inst_inj_cast h h'
+        subst_eqs
+        nomatch Val.gen.not_steps s₁
+    this rfl rfl s₂
+  | @inst_gen τ e' τ', s₂ =>
+    have {τ₂} (h : τ₂ = τ.subst (.mk τ')) {e e₂} (h' : h ▸ e = e'.gen.inst τ') (s₂ : Steps e e₂) : e'.substTp (.mk τ') = h ▸ e₂ := by
+      cases s₂ with
+      | app => nomatch h
+      | app_lam => nomatch h
+      | inst s₂ =>
+        have ⟨_, _⟩ := inst_inj_cast h h'
+        subst_eqs
+        nomatch Val.gen.not_steps s₂
+      | inst_gen =>
+        have ⟨_, _⟩ := inst_inj_cast h h'
+        subst_eqs
+        rfl
+    this rfl rfl s₂
 
 def Tm.progress : (e : Tm .nil .nil τ) → Val e ⊕ Σ e', Steps e e'
   | lam e => .inl .lam
@@ -879,6 +923,37 @@ def Tm.Reduces.inst : (r : Reduces e e') → Reduces (e.inst τ) (e'.inst τ) :=
 
 def Tm.Reduces.cast (r : Reduces e e') : Reduces (e.cast hΓ hτ) (e'.cast hΓ hτ) :=
   by subst_eqs; simp; exact r
+
+theorem Tm.Reduces.deterministic (r₁ : Reduces e e₁) (r₂ : Reduces e e₂) (v₁ : Val e₁) (v₂ : Val e₂) : e₁ = e₂ := by
+  induction r₁ with
+  | refl =>
+    cases r₂ with
+    | refl => rfl
+    | step s₂ r₂ => nomatch v₁.not_steps s₂
+  | step s₁ _ ih =>
+    cases r₂ with
+    | refl => nomatch v₂.not_steps s₁
+    | step s₂ r₂ =>
+      cases s₁.deterministic s₂
+      exact ih r₂ v₁
+
+instance : WellFoundedRelation { x // Acc r x } where
+  rel := InvImage r (·.1)
+  wf  := ⟨fun ac => InvImage.accessible _ ac.2⟩
+
+def Tm.Reduces.irrelevant' (h : Acc (fun e e' => Nonempty (Steps e' e)) e) : Σ e', Val e' × Reduces e e' :=
+  match progress e with
+  | .inl v => ⟨_, v, refl⟩
+  | .inr ⟨e', s⟩ => have := ⟨s⟩; let ⟨_, v, r⟩ := irrelevant' (h.inv this); ⟨_, v, step s r⟩
+  termination_by Subtype.mk e h
+
+def Tm.Reduces.irrelevant (h : Nonempty (Σ e', Val e' × Reduces e e')) : Σ e', Val e' × Reduces e e' :=
+  irrelevant' <| by
+    revert h
+    intro ⟨e', v, r⟩
+    induction r with
+    | refl => exact ⟨_, fun _ h => nomatch h.elim v.not_steps⟩
+    | step s r ih => exact ⟨_, fun _ h => h.elim s.deterministic ▸ ih v⟩
 
 def Tm.Cand (τ : Tp .nil) :=
   { C : Tm .nil .nil τ → Prop // ∀ e e', (s : Reduces e e') → (c : C e') → C e }
@@ -1060,7 +1135,8 @@ theorem Tm.ftlr : ∀ e, HT' Δ Γ τ e
   | gen e, δ, η, γ, ht_γ => ⟨_, .refl, fun τ' C => by simp; exact ftlr e (Tp.Var.cases τ' δ) (Tp.Var.cases C η) γ.weakenTp' (Var.casesRename fun x => by simp; exact HT.rename.mp (ht_γ x))⟩
   | inst e τ, δ, η, γ, ht_γ => let ⟨e', r, ht⟩ := ftlr e δ η γ ht_γ; .expand _ (e'.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (.cast (r.inst.trans (.step .inst_gen .refl))) <| have := ht (τ.subst δ) ⟨HT Δ δ η τ, HT.expand⟩; by rename_i τ'; simp! at this ⊢; have comp := @HT.compose Δ δ η τ' τ (e'.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)); simp at comp; have := comp.mpr this; exact this
 
-theorem Tm.termination (e : Tm .nil .nil τ) : Nonempty (Σ e', Val e' × Reduces e e') :=
+def Tm.termination (e : Tm .nil .nil τ) : Σ e', Val e' × Reduces e e' :=
+  Tm.Reduces.irrelevant <|
   match τ, e, ftlr e .var nofun nofun nofun with
   | .arr τ₁ τ₂, e, ⟨e', r, _⟩ => ⟨.lam (e'.cast (by simp) (by simp)), .lam, by simp at r; have := r.cast (hΓ := rfl) (hτ := show (τ₁.arr τ₂).subst .var = τ₁.arr τ₂ by simp); simp at this; exact this⟩
   | .all τ, _, ⟨e, r, _⟩ => ⟨.gen (e.cast rfl (by simp)), .gen, by simp! at r; have := r.cast (hΓ := rfl) (hτ := show τ.all.subst .var = τ.all by simp); simp at this; exact this⟩

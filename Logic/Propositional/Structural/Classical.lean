@@ -97,4 +97,37 @@ def Seq.cut : (D : Seq Γ₁ (Γ₂.cons A)) → (E : Seq (Γ₁.cons A) Γ₂) 
   termination_by D E => (A, D.sizeOf, E.sizeOf)
   decreasing_by all_goals subst_vars; decreasing_tactic
 
+def Seq₁ (Γ₂ Γ : Ctx) (A : Propn) : Type :=
+  Seq Γ (Γ₂.cons A)
+
+def Seq₂ (Γ₁ Γ : Ctx) (A : Propn) : Type :=
+  Seq (Γ₁.cons A) Γ
+
+instance Seq₁.judge : Judge (Seq₁ Γ₂) where
+  transform u := .id' u .here
+  rename γ := .subst γ .id
+
+instance Seq₂.judge : Judge (Seq₂ Γ₁) where
+  transform := .id' .here
+  rename γ := .subst .id γ
+
+instance Seq₁.judgeTrans [jt : JudgeTrans (Seq₁ Γ₂) (Seq₁ Γ₂')] : JudgeTrans (Seq₁ Γ₂) (Seq₁ (Γ₂'.cons A)) where
+  transform D := (jt.transform D).subst .id (.lift .weakening)
+
+instance Seq₂.judgeTrans [jt : JudgeTrans (Seq₂ Γ₁) (Seq₂ Γ₁')] : JudgeTrans (Seq₂ Γ₁) (Seq₂ (Γ₁'.cons A)) where
+  transform D := (jt.transform D).subst (.lift .weakening) .id
+
+def Seq.subst' (γ₁ : Subst (Seq₁ Γ₂') Γ₁ Γ₁') (γ₂ : Subst (Seq₂ Γ₁') Γ₂ Γ₂') : (D : Seq Γ₁ Γ₂) → Seq Γ₁' Γ₂'
+  | id u v => cut (γ₁ u) (γ₂ v)
+  | trueR v => cut (trueR .here) (γ₂ v)
+  | falseL u => cut (γ₁ u) (falseL .here)
+  | notR v D => cut (notR .here (D.subst' (γ₁.map inferInstance).lift (γ₂.map inferInstance).weaken)) (γ₂ v)
+  | notL u D => cut (γ₁ u) (notL .here (D.subst' (γ₁.map inferInstance).weaken (γ₂.map inferInstance).lift))
+  | andR v D₁ D₂ => cut (andR .here (D₁.subst' (γ₁.map inferInstance) (γ₂.map inferInstance).weaken.lift) (D₂.subst' (γ₁.map inferInstance) (γ₂.map inferInstance).weaken.lift)) (γ₂ v)
+  | andL₁ u D => cut (γ₁ u) (andL₁ .here (D.subst' (γ₁.map inferInstance).weaken.lift (γ₂.map inferInstance)))
+  | andL₂ u D => cut (γ₁ u) (andL₂ .here (D.subst' (γ₁.map inferInstance).weaken.lift (γ₂.map inferInstance)))
+  | orR₁ v D => cut (orR₁ .here (D.subst' (γ₁.map inferInstance) (γ₂.map inferInstance).weaken.lift)) (γ₂ v)
+  | orR₂ v D => cut (orR₂ .here (D.subst' (γ₁.map inferInstance) (γ₂.map inferInstance).weaken.lift)) (γ₂ v)
+  | orL u D₁ D₂ => cut (γ₁ u) (orL .here (D₁.subst' (γ₁.map inferInstance).weaken.lift (γ₂.map inferInstance)) (D₂.subst' (γ₁.map inferInstance).weaken.lift (γ₂.map inferInstance)))
+
 end SC
