@@ -5,6 +5,7 @@ inductive Tp.Ctx
 inductive Tp.Var : (Δ : Ctx) → Type
   | here : Var (.cons Δ)
   | there (α : Var Δ) : Var Δ.cons
+  deriving DecidableEq
 
 @[elab_as_elim]
 def Tp.Var.cases {motive : (α : Var (.cons Δ)) → Sort u} (here : motive here) (there : ∀ α, motive (there α)) : ∀ α, motive α
@@ -19,6 +20,7 @@ inductive Tp : (Δ : Tp.Ctx) → Type
   | var (α : Tp.Var Δ) : Tp Δ
   | arr (τ₁ τ₂ : Tp Δ) : Tp Δ
   | all (τ : Tp Δ.cons) : Tp Δ
+  deriving DecidableEq
 
 def Tp.Rename (Δ Δ' : Ctx) : Type :=
   (α : Var Δ) → Var Δ'
@@ -133,6 +135,11 @@ theorem Tm.Ctx.rename_subst {δ₁ : Tp.Subst Δ Δ'} {δ₂ : Tp.Rename Δ' Δ'
   | cons .. => congr (congrArg cons rename_subst) Tp.rename_subst
 
 @[simp]
+theorem Tm.Ctx.subst_subst {δ₁ : Tp.Subst Δ Δ'} {δ₂ : Tp.Subst Δ' Δ''} : ∀ {Γ}, subst δ₂ (subst δ₁ Γ) = subst (fun α => (δ₁ α).subst δ₂) Γ
+  | nil => rfl
+  | cons .. => congr (congrArg cons subst_subst) Tp.subst_subst
+
+@[simp]
 theorem Tm.Ctx.subst_var : {Γ : Ctx Δ} → subst .var Γ = Γ
   | nil => rfl
   | cons .. => congr (congrArg cons subst_var) Tp.subst_var
@@ -140,6 +147,7 @@ theorem Tm.Ctx.subst_var : {Γ : Ctx Δ} → subst .var Γ = Γ
 inductive Tm.Var Δ (τ : Tp Δ) : (Γ : Ctx Δ) → Type
   | here : Var Δ τ (.cons Γ τ)
   | there (x : Var Δ τ Γ) : Var Δ τ (Γ.cons τ')
+  deriving DecidableEq
 
 @[elab_as_elim]
 def Tm.Var.cases {motive : ∀ τ, (x : Var Δ τ (.cons Γ τ')) → Sort u} (here : motive τ' here) (there : ∀ {τ} x, motive τ (there x)) : ∀ {τ} x, motive τ x
@@ -187,6 +195,72 @@ inductive Tm : ∀ Δ, (Γ : Tm.Ctx Δ) → (τ : Tp Δ) → Type
   | app (e : Tm Δ Γ (τ₁.arr τ₂)) (e₁ : Tm Δ Γ τ₁) : Tm Δ Γ τ₂
   | gen (e : Tm (.cons Δ) (Γ.rename .there) τ) : Tm Δ Γ (.all τ)
   | inst (e : Tm Δ Γ (.all τ)) τ' : Tm Δ Γ (τ.subst (.mk τ'))
+
+theorem hcongrArg₂ {α : Sort u} {β : α → Sort v} {γ : ∀ a, β a → Sort w} (f : ∀ a b, γ a b) {a₁ a₂ : α} (ha : a₁ = a₂) {b₁ : β a₁} {b₂ : β a₂} (hb : HEq b₁ b₂) : HEq (f a₁ b₁) (f a₂ b₂) :=
+  by cases ha; cases hb; rfl
+
+theorem Tm.rec_cast {τ τ' : Tp Δ} (h : τ = τ') {var lam app gen inst} {t : Tm Δ Γ τ} : @rec motive @var @lam @app @gen @inst Δ Γ τ' (h ▸ t) = (h.rec (motive := fun τ' _ => _ = motive Δ Γ τ' _) rfl).mp (@rec motive @var @lam @app @gen @inst Δ Γ τ t) :=
+  eq_of_heq (.trans (hcongrArg₂ _ h.symm (h.rec (.refl _))) (have := h.rec (motive := fun τ' _ => _ = motive Δ Γ τ' _) rfl; (this.rec (.refl _) : HEq _ (this.mp _))))
+
+instance Tm.decEq : DecidableEq (Tm Δ Γ τ)
+  | var x, e' => by cases e' <;> simp <;> infer_instance
+  | lam (τ₂ := τ₂) (τ₁ := τ₁) e, e' =>
+    have {τ} (h : τ = τ₁.arr τ₂) {e₁ e' : Tm Δ Γ τ} (h' : e₁ = h ▸ e.lam) : Decidable (e₁ = e') := by
+      cases e' <;> subst_eqs
+      case inst τ e' =>
+        left
+        intro h'
+        have := Tm.noConfusion (P := False) h'
+        simp [Tm.noConfusionType, Tm.rec_cast] at this
+      all_goals simp <;> (try infer_instance) <;> apply Tm.decEq
+    this rfl rfl
+  | app e e₁, e' => by
+    cases e' <;> simp <;> (try infer_instance)
+    rename_i τ₁ τ₁' _ _
+    by_cases τ₁ = τ₁' <;> simp [*]
+    case neg => infer_instance
+    subst_eqs
+    simp
+    refine instDecidableAnd (dp := ?_) (dq := ?_) <;> apply Tm.decEq
+  | gen (τ := τ') e, e' =>
+    have {τ} (h : τ = τ'.all) {e₁ e' : Tm Δ Γ τ} (h' : e₁ = h ▸ e.gen) : Decidable (e₁ = e') := by
+      cases e' <;> subst_eqs
+      case inst τ e' =>
+        left
+        intro h'
+        have := Tm.noConfusion (P := False) h'
+        simp [Tm.noConfusionType, Tm.rec_cast] at this
+      all_goals simp <;> (try infer_instance) <;> apply Tm.decEq
+    this rfl rfl
+  | inst (τ := τ₂) e τ₁, e' =>
+    have {τ} (h : τ = τ₂.subst (.mk τ₁)) {e₁ e' : Tm Δ Γ τ} (h' : e₁ = h ▸ e.inst τ₁) : Decidable (e₁ = e') := by
+      cases e' <;> subst_eqs <;> (try simp; infer_instance)
+      . left
+        intro h'
+        have := Tm.noConfusion (P := False) h'
+        simp [Tm.noConfusionType, Tm.rec_cast] at this
+      . left
+        intro h'
+        have := Tm.noConfusion (P := False) h'
+        simp [Tm.noConfusionType, Tm.rec_cast] at this
+      case inst τ₂' τ₁' e' =>
+        by_cases τ₁ = τ₁'
+        . subst_eqs
+          by_cases τ₂ = τ₂'
+          . subst_eqs
+            simp
+            apply Tm.decEq
+          . left
+            intro h''
+            have := Tm.noConfusion (P := τ₂ = τ₂') h''
+            simp +contextual [Tm.noConfusionType, Tm.rec_cast] at this
+            contradiction
+        . left
+          intro h''
+          have := Tm.noConfusion (P := τ₁ = τ₁') h''
+          simp [Tm.noConfusionType, Tm.rec_cast] at this
+          contradiction
+    this rfl rfl
 
 def Tm.Var.cast {τ τ' Γ Γ'} (hτ : τ = τ') (hΓ : Γ = Γ') (x : Var Δ τ Γ) : Var Δ τ' Γ' :=
   match Γ', x with
@@ -300,10 +374,109 @@ theorem Tm.rename_id : rename (·) e = e := by
   | gen e ih => exact ih _ (Var.casesRename fun x => by simp; exact congrArg _ (h x))
 
 @[simp]
-theorem Tm.Subst.rename_rename : rename δ γ (x.rename δ) = (γ x).renameTp δ := by
+theorem Tm.Subst.rename_rename' : rename δ γ (x.rename δ) = (γ x).renameTp δ := by
   induction x with
   | here => rfl
   | there x ih => exact ih
+
+@[simp]
+theorem Tm.Var.rename_rename (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : cast rfl (by simp [h]) (rename δ₂ (rename δ₁ x)) = cast (by simp [h]) rfl (rename δ₂' (rename δ₁' x)) := by
+  induction x with
+  | here =>
+    have {Δ} {τ τ' τ'' : Tp Δ} {Γ Γ' Γ'' : Ctx Δ} (hτ : τ = τ'') (hτ' : τ' = τ'') (hΓ : Γ.cons τ = Γ'') (hΓ'' : Γ'.cons τ' = Γ'') : cast hτ hΓ here = cast hτ' hΓ'' here := by
+      subst_eqs
+      rfl
+    exact this ..
+  | there x ih => simp! [ih]
+
+theorem Tm.Var.rename_rename' (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : HEq (rename δ₂ (rename δ₁ x)) (rename δ₂' (rename δ₁' x)) := by
+  have := heq_of_eq (rename_rename h (x := x))
+  simp [-heq_eq_eq] at this
+  exact this
+
+theorem Tm.Var.rename_rename'' (h : ∀ α, δ₂ (δ₁ α) = δ α) : rename δ₂ (rename δ₁ x) = cast (by simp [h]) (by simp [h]) (rename δ x) := by
+  induction x with
+  | here =>
+    have {Δ} {τ τ' : Tp Δ} {Γ Γ' : Ctx Δ} {hτ : τ = τ'} {hΓ : Γ.cons τ = Γ'.cons τ'} : here = cast hτ hΓ here := by
+      subst_eqs
+      rfl
+    exact this
+  | there x ih => simp! [ih]
+
+@[simp]
+theorem Tm.renameTp_cast : renameTp δ (cast hΓ hτ e) = cast (congrArg _ hΓ) (congrArg _ hτ) (e.renameTp δ) :=
+  by subst_eqs; simp
+
+@[simp]
+theorem Tm.substTp_cast : substTp δ (cast hΓ hτ e) = cast (congrArg _ hΓ) (congrArg _ hτ) (e.substTp δ) :=
+  by subst_eqs; simp
+
+theorem Tm.substTp_cong (eq : δ = δ') : substTp δ e = cast (by simp [eq]) (by simp [eq]) (substTp δ' e) :=
+  by cases eq; simp
+
+theorem Tm.inst_cong {Γ₁ Γ₂ τ₁ τ₂ e₁ e₂ τ'₁ τ'₂} (hΓ : Γ₁ = Γ₂) (hτ : τ₁ = τ₂) (he : HEq e₁ e₂) (hτ : τ'₁ = τ'₂) : HEq (@inst Δ Γ₁ τ₁ e₁ τ'₁) (@inst Δ Γ₂ τ₂ e₂ τ'₂) := by
+  subst_eqs
+  rfl
+
+@[simp]
+theorem Eq.rec_heq {refl} : HEq (@rec α a motive refl b h) rhs = HEq refl rhs :=
+  by cases h; rfl
+
+@[simp]
+theorem Eq.rec_heq' {refl} : HEq lhs (@rec α a motive refl b h) = HEq lhs refl :=
+  by cases h; rfl
+
+@[simp]
+theorem Tm.Var.heq_here {τ τ'} (hτ : τ = τ') : HEq (@here Δ τ Γ) (@here Δ τ' Γ) :=
+  by cases hτ; rfl
+
+@[simp]
+theorem Tm.Var.subst_subst : subst δ₂ (subst δ₁ x) = cast (by simp) (by simp) (subst (fun α => (δ₁ α).subst δ₂) x) := by
+  induction x with
+  | here => simp! [← heq_eq_eq]
+  | there x ih => simp! [ih]
+
+@[simp]
+theorem Tm.renameTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Rename Δ' Δ''} : renameTp δ₂ (renameTp δ₁ e) = (renameTp (fun α => δ₂ (δ₁ α)) e).cast (by simp) (by simp) := by
+  induction e generalizing Δ' Δ'' with simp! [*]
+  | var x => simp [cast]; apply Var.rename_rename''; simp
+  | app e e₁ => simp [cast]
+  | gen e ih =>
+    simp [← heq_eq_eq]
+    congr
+    funext α
+    cases α <;> rfl
+  | inst e τ ih =>
+    simp [← heq_eq_eq]
+    apply inst_cong <;> simp
+    rfl
+
+@[simp]
+theorem Tm.substTp_substTp {δ₁ : Tp.Subst Δ Δ'} {δ₂ : Tp.Subst Δ' Δ''} {e : Tm Δ Γ τ} : substTp δ₂ (substTp δ₁ e) = (substTp (fun α => (δ₁ α).subst δ₂) e).cast (by simp) (by simp) := by
+  induction e generalizing Δ' Δ'' with simp! [*]
+  | var x => simp [cast]
+  | app e e₁ => simp [cast]
+  | gen e ih =>
+    simp [← heq_eq_eq]
+    congr
+    funext α
+    cases α <;> simp!
+  | inst e τ ih =>
+    simp [← heq_eq_eq]
+    apply inst_cong <;> simp
+    congr
+    funext α
+    cases α <;> simp!
+
+@[simp]
+theorem Tm.Subst.rename_cast : rename δ γ (.cast hτ rfl x) = (rename δ γ x).cast rfl hτ :=
+  by cases hτ; simp
+
+theorem Tm.Subst.rename_rename : rename δ₂ (rename δ₁ γ) x = cast (by simp) rfl (rename (fun α => δ₂ (δ₁ α)) γ (x.cast rfl (by simp))) := by
+  refine x.casesRename fun x => ?_
+  refine x.casesRename fun x => ?_
+  simp
+  simp [Var.rename_rename'']
 
 @[simp]
 theorem Tm.Rename.rename_rename' {γ : Rename Δ Γ Γ'} {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Rename Δ' Δ''} {x : Var _ τ _} : rename δ₂ (rename δ₁ @γ) x = x.casesRename (Var.casesRename fun x => (γ x).rename δ₁ |>.rename δ₂) := by
@@ -321,8 +494,8 @@ theorem Tm.subst_var : subst var e = e := by
   generalize h : (fun {τ} x => var x) = γ
   replace h {τ} x := congrFun (congrFun h.symm τ) x
   induction e with simp! [*]
-  | lam e ih => exact ih _ (Var.cases rfl fun _ => by simp! [h])
-  | gen e ih => exact ih _ (Var.casesRename fun x => by simp! [h])
+  | lam e ih => exact ih _ (Var.cases rfl (by simp! [h]))
+  | gen e ih => exact ih _ (Var.casesRename (by simp! [h]))
 
 @[simp]
 theorem Tp.Subst.weaken_var : @weaken Δ _ var = var := by
@@ -358,14 +531,6 @@ theorem Tm.cast_rename {γ : Rename Δ Γ Γ'} : cast hΓ rfl (rename γ e) = re
   by cases hΓ; simp
 
 @[simp]
-theorem Eq.rec_heq {refl} : HEq (@rec α a motive refl b h) rhs = HEq refl rhs :=
-  by cases h; rfl
-
-@[simp]
-theorem Eq.rec_heq' {refl} : HEq lhs (@rec α a motive refl b h) = HEq lhs refl :=
-  by cases h; rfl
-
-@[simp]
 theorem Tm.Var.casesRename_cast : @casesRename Δ' Δ Γ δ motive @k τ' (@cast Δ' (.rename δ τ) τ' (Γ.rename δ) (Γ.rename δ) hτ rfl (.rename δ x)) = hτ.rec (motive := fun τ' hτ => motive τ' (cast hτ rfl (x.rename δ))) (cast_rfl (x := x.rename δ) ▸ k x :) := by
   cases hτ
   induction x with
@@ -390,33 +555,6 @@ theorem Tm.Var.heq_of_eq_cast (eq : cast hτ hΓ x = x') : HEq x x' :=
 
 theorem Tm.heq_of_eq_cast (eq : cast hΓ hτ e = e') : HEq e e' :=
   by cases eq; simp
-
-theorem Tm.Var.heq_here {τ τ'} (hτ : τ = τ') : HEq (@here Δ τ Γ) (@here Δ τ' Γ) :=
-  by cases hτ; rfl
-
-@[simp]
-theorem Tm.Var.rename_rename (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : cast rfl (by simp [h]) (rename δ₂ (rename δ₁ x)) = cast (by simp [h]) rfl (rename δ₂' (rename δ₁' x)) := by
-  induction x with
-  | here =>
-    have {Δ} {τ τ' τ'' : Tp Δ} {Γ Γ' Γ'' : Ctx Δ} (hτ : τ = τ'') (hτ' : τ' = τ'') (hΓ : Γ.cons τ = Γ'') (hΓ'' : Γ'.cons τ' = Γ'') : cast hτ hΓ here = cast hτ' hΓ'' here := by
-      subst_eqs
-      rfl
-    exact this ..
-  | there x ih => simp! [ih]
-
-theorem Tm.Var.rename_rename' (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : HEq (rename δ₂ (rename δ₁ x)) (rename δ₂' (rename δ₁' x)) := by
-  have := heq_of_eq (rename_rename h (x := x))
-  simp [-heq_eq_eq] at this
-  exact this
-
-theorem Tm.Var.rename_rename'' (h : ∀ α, δ₂ (δ₁ α) = δ α) : rename δ₂ (rename δ₁ x) = cast (by simp [h]) (by simp [h]) (rename δ x) := by
-  induction x with
-  | here =>
-    have {Δ} {τ τ' : Tp Δ} {Γ Γ' : Ctx Δ} {hτ : τ = τ'} {hΓ : Γ.cons τ = Γ'.cons τ'} : here = cast hτ hΓ here := by
-      subst_eqs
-      rfl
-    exact this
-  | there x ih => simp! [ih]
 
 @[simp]
 theorem Tm.Var.subst_rename (h : ∀ α, δ₂ (δ₁ α) = δ α) : subst δ₂ (rename δ₁ x) = cast (by simp [h]) (by simp [h]) (subst δ x) := by
@@ -449,24 +587,6 @@ theorem Tm.Var.subst_var : subst .var x = x.cast Tp.subst_var.symm Ctx.subst_var
   | there x ih => simp! [ih]
 
 @[simp]
-theorem Tm.renameTp_cast : renameTp δ (cast hΓ hτ e) = cast (congrArg _ hΓ) (congrArg _ hτ) (e.renameTp δ) :=
-  by subst_eqs; simp
-
-@[simp]
-theorem Tm.substTp_cast : substTp δ (cast hΓ hτ e) = cast (congrArg _ hΓ) (congrArg _ hτ) (e.substTp δ) :=
-  by subst_eqs; simp
-
-theorem Tm.renameTp_cong (eq : δ = δ') : renameTp δ e = cast (by simp [eq]) (by simp [eq]) (renameTp δ' e) :=
-  by cases eq; simp
-
-theorem Tm.substTp_cong (eq : δ = δ') : substTp δ e = cast (by simp [eq]) (by simp [eq]) (substTp δ' e) :=
-  by cases eq; simp
-
-theorem Tm.inst_cong {Γ₁ Γ₂ τ₁ τ₂ e₁ e₂ τ'₁ τ'₂} (hΓ : Γ₁ = Γ₂) (hτ : τ₁ = τ₂) (he : HEq e₁ e₂) (hτ : τ'₁ = τ'₂) : HEq (@inst Δ Γ₁ τ₁ e₁ τ'₁) (@inst Δ Γ₂ τ₂ e₂ τ'₂) := by
-  subst_eqs
-  rfl
-
-@[simp]
 theorem Tm.substTp_var : substTp .var e = e.cast Ctx.subst_var.symm Tp.subst_var.symm := by
   have {Δ} : Tp.Subst.weaken (Δ := Δ) .var = .var := by
     funext α
@@ -477,24 +597,6 @@ theorem Tm.substTp_var : substTp .var e = e.cast Ctx.subst_var.symm Tp.subst_var
   | app e e₁ ih ih₁ => simp only [substTp, cast, ih, ih₁]; simp
   | gen e ih => simp! [cast]; simp! [← heq_eq_eq]; rewrite [this]; simp [ih]
   | inst e τ ih => simp! [cast, ih, ← heq_eq_eq]; apply inst_cong <;> simp [this]
-
-@[simp]
-theorem Tm.renameTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Rename Δ' Δ''} : renameTp δ₂ (renameTp δ₁ e) = (renameTp (fun α => δ₂ (δ₁ α)) e).cast (by simp) (by simp) := by
-  induction e generalizing Δ' Δ'' with simp! [*]
-  | var x => simp [cast]; apply Var.rename_rename''; simp
-  | app e e₁ => simp [cast]
-  | gen e ih =>
-    have : @Eq (Tp.Rename ..) (fun α => .cases .here (fun α => (δ₂ α).there) (.cases .here (fun α => (δ₁ α).there) α)) (.weaken fun α => δ₂ (δ₁ α)) := by
-      funext α
-      cases α
-      . rfl
-      . rfl
-    rewrite [renameTp_cong this]
-    simp
-  | inst e τ ih =>
-    simp [← heq_eq_eq]
-    apply inst_cong <;> simp
-    rfl
 
 @[simp]
 theorem Tm.substTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ''} : substTp δ₂ (renameTp δ₁ e) = (substTp (fun α => δ₂ (δ₁ α)) e).cast (by simp) (by simp) := by
@@ -539,7 +641,7 @@ theorem Tm.rename_rename'' {γ₁ : Subst Δ Γ Γ'} {γ₂ : Rename Δ Γ' Γ''
   simp [← h]
   generalize γ₁ x = e
   clear h γ₁
-  rename_i Δ' τ x' _ 
+  rename_i Δ' τ x' _
   clear Γ τ x' γ x
   induction e generalizing Δ' with simp! [*]
   | lam e ih =>
@@ -560,12 +662,68 @@ theorem Tm.rename_rename'' {γ₁ : Subst Δ Γ Γ'} {γ₂ : Rename Δ Γ' Γ''
     simp! [← heq_eq_eq]
     rfl
 
-theorem Tm.rename_rename''' {γ : Subst Δ Γ Γ'} : rename .there (Subst.rename δ γ x) = Subst.rename δ (Γ' := .cons _ τ) (fun x => rename .there (γ x)) x := by
-  refine .trans ?_ (rename_rename'' (γ₁ := @γ) (γ₂ := .there (τ' := τ)) fun _ => by simp)
-  congr
-  funext τ x
+@[simp]
+theorem Tm.rename_renameTp : rename (Rename.rename δ @γ) (renameTp δ e) = renameTp δ (rename @γ e) := by
+  rename_i Δ Δ' _ _ _
+  induction e generalizing Δ' with simp! [*]
+  | lam e ih =>
+    refine .trans ?_ (ih (γ := γ.weaken))
+    congr
+    funext τ x
+    cases x
+    . rfl
+    next x =>
+    refine x.casesRename fun x => ?_
+    change _ = Rename.rename δ γ.weaken (.rename δ x.there)
+    simp
+    simp!
+  | gen e ih =>
+    apply cast_flip
+    refine .trans ?_ ih
+    simp
+    congr
+    funext τ x
+    refine x.casesRename fun x => ?_
+    refine x.casesRename fun x => ?_
+    simp! [← heq_eq_eq]
+    apply Var.rename_rename'
+    simp!
+
+theorem Tm.cast_subst {γ : Subst Δ Γ Γ'} : cast hΓ hτ (subst γ e) = subst (fun x => (γ x).cast hΓ rfl) (e.cast rfl hτ) :=
+  by subst_eqs; simp
+
+@[simp]
+theorem Tm.subst_cast {γ : Subst Δ Γ Γ'} : subst γ (cast hΓ hτ e) = cast rfl hτ (subst (fun x => γ (x.cast rfl hΓ)) e) :=
+  by subst_vars; simp
+
+theorem Tm.subst_rename'' {γ₁ : Subst Δ Γ Γ'} {γ₂ : Subst Δ Γ' Γ''} {γ : Subst Δ Γ Γ''} (h : ∀ {τ} (x : Var _ τ _), (γ₁ x).subst @γ₂ = γ x) : subst (γ₂.rename δ) (γ₁.rename δ x) = γ.rename δ x := by
   refine x.casesRename fun x => ?_
-  simp!
+  simp [← h]
+  generalize γ₁ x = e
+  clear h γ₁
+  rename_i Δ' τ x' _
+  clear Γ τ x' γ x
+  induction e generalizing Δ' with simp! [*]
+  | lam e ih =>
+    simp! [← ih]
+    congr
+    funext τ x
+    cases x
+    . rfl
+    next x =>
+    refine x.casesRename fun x => ?_
+    simp! [Subst.rename]
+    simp [← rename_renameTp]
+    congr
+    funext τ x
+    refine x.casesRename fun x => ?_
+    simp!
+  | gen e ih =>
+    simp! [← ih]
+    simp [cast_subst]
+    congr
+    funext τ x
+    simp! [Subst.rename_rename]
 
 theorem Tm.subst_rename' (h : ∀ {τ} (x : Var _ τ _), γ₂ (γ₁ x) = γ x) : Subst.rename δ γ₂ (Rename.rename δ γ₁ x) = Subst.rename δ γ x := by
   refine x.casesRename fun x => ?_
@@ -605,6 +763,17 @@ theorem Tm.rename_subst : rename @γ₂ (subst @γ₁ e) = subst (fun x => (γ�
   | inst e τ ih => exact congrArg (inst · τ) (ih _ h)
 
 @[simp]
+theorem Tm.subst_subst : subst @γ₂ (subst @γ₁ e) = subst (fun x => (γ₁ x).subst @γ₂) e := by
+  generalize h : (fun {τ} x => (γ₁ x).subst @γ₂) = γ
+  replace h {τ} x := congrFun (congrFun h τ) x
+  induction e with
+  | var x => exact h x
+  | lam e ih => exact congrArg lam (ih _ <| Var.cases rfl fun x => by simp [Rename.weaken, Subst.weaken, Var.cases, ← h x])
+  | app e e₁ ih ih₁ => exact congr (congrArg app (ih _ h)) (ih₁ _ h)
+  | gen e ih => exact congrArg gen (ih _ fun _ => subst_rename'' h)
+  | inst e τ ih => exact congrArg (inst · τ) (ih _ h)
+
+@[simp]
 theorem Tm.substTp_rename {δ : Tp.Subst Δ Δ'} {γ : Rename Δ Γ Γ'} {e : Tm Δ Γ τ} : substTp δ (rename γ e) = (e.substTp δ).rename (Var.casesSubst fun x => (γ x).subst δ) := by
   induction e generalizing Δ' with simp! [*]
   | lam e ih =>
@@ -630,79 +799,46 @@ theorem Tm.substTp_rename {δ : Tp.Subst Δ Δ'} {γ : Rename Δ Γ Γ'} {e : Tm
     simp
     simp!
 
-example (e : Tm Δ Γ τ) : Tm Δ.cons (Γ.rename .there) (τ.rename .there) := e.renameTp .there
-example (e : Tm Δ Γ τ) : Tm Δ (Γ.cons τ') τ := e.rename .there
-example (e : Tm (.cons Δ) Γ τ) (τ' : Tp Δ) : Tm Δ (Γ.subst (.mk τ')) (τ.subst (.mk τ')) := e.substTp (.mk τ')
-example (e : Tm Δ (Γ.cons τ') τ) (e' : Tm Δ Γ τ') : Tm Δ Γ τ := e.subst (Tm.Subst.mk e')
-
-def Tm.Subst' Δ Δ' (δ : Tp.Subst Δ Δ') (Γ : Ctx Δ) (Γ' : Ctx Δ') : Type :=
-  ∀ {τ}, (x : Var Δ τ Γ) → Tm Δ' Γ' (τ.subst δ)
-
-def Tm.Subst'.weakenTp (γ : Subst' Δ Δ' δ Γ Γ') : Subst' Δ.cons Δ'.cons δ.weaken (Γ.rename .there) (Γ'.rename .there) :=
-  Var.casesRename fun x => ((γ x).renameTp .there).cast rfl (by simp!)
-
 @[simp]
-def Tm.Subst'.weaken (γ : Subst' Δ Δ' δ Γ Γ') {τ} : Subst' Δ Δ' δ (Γ.cons τ) (Γ'.cons (τ.subst δ)) :=
-  Var.cases (var .here) fun x => (γ x).rename .there
-
-@[simp]
-def Tm.Subst'.weakenTp' (γ : Subst' Δ Δ' δ Γ Γ') : Subst' Δ.cons Δ' (Tp.Var.cases τ δ) (Γ.rename .there) Γ' :=
-  Var.casesRename fun x => (γ x).cast rfl (by simp!)
-
-def Tm.subst' (γ : Subst' Δ Δ' δ Γ Γ') {τ} : (e : Tm Δ Γ τ) → Tm Δ' Γ' (τ.subst δ)
-  | var x => γ x
-  | lam e => lam (e.subst' γ.weaken)
-  | app e e₁ => app (e.subst' @γ) (e₁.subst' @γ)
-  | gen e => gen (e.subst' γ.weakenTp)
-  | inst e τ => inst (e.subst' @γ) (τ.subst δ) |>.cast rfl (by simp!)
-
-@[simp]
-theorem Tm.Subst'.weakenTp_rename {γ : Subst' Δ Δ' δ Γ Γ'} : weakenTp γ (.rename .there x) = ((γ x).renameTp .there).cast rfl (by simp!) := by
-  induction x with
-  | here => simp! [weakenTp]
-  | there x ih => exact ih
-
-theorem Tm.subst_cast {γ : Subst Δ Γ Γ'} : subst γ (cast hΓ hτ e) = cast rfl hτ (subst (fun x => γ (x.cast rfl hΓ)) e) :=
-  by subst_vars; simp
-
-theorem Tm.cast_subst {γ : Subst Δ Γ Γ'} : cast hΓ hτ (subst γ e) = subst (fun x => (γ x).cast hΓ rfl) (e.cast rfl hτ) :=
-  by subst_eqs; simp
-
-@[simp]
-theorem Tm.Subst.rename_cast : rename δ γ (.cast hτ rfl e) = (rename δ γ e).cast rfl hτ :=
-  by cases hτ; simp
-
-@[simp]
-theorem Tm.rename_renameTp : rename (Rename.rename δ @γ) (renameTp δ e) = renameTp δ (rename @γ e) := by
-  rename_i Δ Δ' _ _ _
+theorem Tm.substTp_subst {γ : Subst Δ Γ Γ'} {δ : Tp.Subst Δ Δ'} : substTp δ (subst γ e) = subst (Var.casesSubst fun x => (γ x).substTp δ) (substTp δ e) := by
   induction e generalizing Δ' with simp! [*]
   | lam e ih =>
-    refine .trans ?_ (ih (γ := γ.weaken))
     congr
     funext τ x
     cases x
     . rfl
     next x =>
-    refine x.casesRename fun x => ?_
-    change _ = Rename.rename δ γ.weaken (.rename δ x.there)
-    simp
+    refine x.casesSubst fun x => ?_
     simp!
-  | gen e ih =>
-    apply cast_flip
-    refine .trans ?_ ih
-    simp
     congr
     funext τ x
-    refine x.casesRename fun x => ?_
-    refine x.casesRename fun x => ?_
-    simp! [← heq_eq_eq]
-    apply Var.rename_rename'
+    refine x.casesSubst fun x => ?_
     simp!
+  | gen e ih =>
+    simp [cast_subst]
+    congr
+    funext τ x
+    refine x.casesSubst fun x => ?_
+    refine x.casesRename fun x => ?_
+    simp! [Rename.rename]
+    have : x.subst (fun α => (δ α).rename .there) = ((x.subst δ).rename .there).cast (by simp) (by simp) := by
+      simp
+    simp! [this, ← heq_eq_eq]
+    have : ((x.subst δ).rename .there).cast (by simp!) (by simp!) = (x.rename .there).subst δ.weaken := by
+      simp!
+    rewrite [this]
+    simp
+    simp!
+
+example (e : Tm Δ Γ τ) : Tm Δ.cons (Γ.rename .there) (τ.rename .there) := e.renameTp .there
+example (e : Tm Δ Γ τ) : Tm Δ (Γ.cons τ') τ := e.rename .there
+example (e : Tm (.cons Δ) Γ τ) (τ' : Tp Δ) : Tm Δ (Γ.subst (.mk τ')) (τ.subst (.mk τ')) := e.substTp (.mk τ')
+example (e : Tm Δ (Γ.cons τ') τ) (e' : Tm Δ Γ τ') : Tm Δ Γ τ := e.subst (Tm.Subst.mk e')
 
 @[simp]
 theorem Tm.subst_renameTp : subst (Subst.rename δ @γ) (renameTp δ e) = renameTp δ (subst @γ e) := by
   rename_i Δ Δ' _ _ _
-  induction e generalizing Δ' with simp! [*, subst_cast]
+  induction e generalizing Δ' with simp! [*]
   | lam e ih =>
     refine .trans ?_ (ih (γ := γ.weaken))
     congr
@@ -730,68 +866,8 @@ theorem Tm.subst_renameTp : subst (Subst.rename δ @γ) (renameTp δ e) = rename
     refine x.casesRename fun x => ?_
     simp!
 
-theorem Tm.subst_subst' {γ₁ : Subst' Δ Δ' δ Γ Γ'} {γ₂ : Subst Δ' Γ' Γ''} : subst @γ₂ (subst' @γ₁ e) = subst' (fun x => (γ₁ x).subst @γ₂) e := by
-  generalize h : (fun {τ} x => (γ₁ x).subst @γ₂) = γ
-  replace h {τ} x := congrFun (congrFun h τ) x
-  induction e generalizing Δ' Γ' Γ'' γ₂ with
-  | var x => exact h x
-  | lam e ih => exact congrArg lam (ih _ <| Var.cases rfl fun x => .trans (by simp!) (congrArg (rename .there) (h x)))
-  | app e e₁ ih ih₁ => exact congr (congrArg app (ih _ h)) (ih₁ _ h)
-  | gen e ih => exact congrArg gen (ih _ (Var.casesRename fun _ => by simp [h, subst_cast]))
-  | inst e τ ih =>
-    simp!
-    simp [← heq_eq_eq, subst_cast]
-    apply inst_cong <;> simp [*]
-
-@[simp]
-theorem Tm.cast_subst' {γ : Subst' Δ Δ' δ Γ Γ'} {e : Tm Δ Γ τ} : cast rfl (congrArg τ.subst h) (subst' γ e) = subst' (fun x => (γ x).cast rfl (congrArg (Tp.subst · _) h)) e :=
-  by cases h; simp
-
-theorem Tm.subst'_cong {δ₁ δ₂ Γ₁ Γ₂ γ₁ γ₂} (hδ : δ₁ = δ₂) (hΓ : Γ₁ = Γ₂) (hγ : ∀ {τ} (x : Var Δ τ Γ), HEq (γ₁ x) (γ₂ x)) : HEq (@subst' Δ Δ' δ₁ Γ Γ₁ γ₁ τ e) (@subst' Δ Δ' δ₂ Γ Γ₂ γ₂ τ e) :=
-  by subst_eqs; cases funext fun τ => funext fun x => eq_of_heq (@hγ τ x); rfl
-
 theorem Tm.rename_cong {Γ₁ Γ₂ γ₁ γ₂} (hΓ : Γ₁ = Γ₂) (hγ : ∀ {τ} (x : Var Δ τ Γ), HEq (γ₁ x) (γ₂ x)) : HEq (@rename Δ Γ Γ₁ γ₁ τ e) (@rename Δ Γ Γ₂ γ₂ τ e) :=
   by cases hΓ; cases funext fun τ => funext fun x => eq_of_heq (@hγ τ x); rfl
-
-theorem Tm.substTp_subst' {γ : Subst' Δ Δ' δ₁ Γ Γ'} {δ₂ : Tp.Subst Δ' Δ''} : substTp δ₂ (subst' @γ e) = (subst' (fun x => (γ x).substTp δ₂ |>.cast rfl (by simp; rfl)) e).cast rfl (by simp) := by
-  induction e generalizing Δ' Γ' Δ'' δ₂ with simp! [*]
-  | lam e ih =>
-    simp [← heq_eq_eq]
-    apply subst'_cong <;> simp
-    intro τ x
-    cases x
-    . simp!; apply heq_of_eq_cast <;> simp [cast]; simp [← heq_eq_eq]; apply Var.heq_here; simp
-    . simp!; apply rename_cong; simp; intro τ x; refine x.casesSubst fun x => ?_; simp!; apply Var.heq_of_eq_cast <;> simp!
-  | app e e₁ ih ih₁ => simp [*, cast]
-  | gen e ih =>
-    simp [← heq_eq_eq]
-    apply subst'_cong <;> simp!
-    . funext α; cases α <;> simp!
-    intro τ x
-    refine x.casesRename fun x => ?_
-    simp!
-  | inst e τ ih =>
-    simp [← heq_eq_eq]
-    apply inst_cong <;> simp!
-    congr
-    funext α
-    cases α <;> simp!
-
-@[simp]
-theorem Tm.subst'_mk {γ : Subst' Δ Δ' δ Γ Γ'} {e : Tm Δ (Γ.cons τ') τ} {e' : Tm Δ' Γ' (τ'.subst δ)} : subst (Subst.mk e') (subst' (Subst'.weaken γ) e) = subst' (Var.cases e' γ) e := by
-  simp [subst_subst']
-  congr
-  funext τ x
-  cases x <;> simp!
-
-@[simp]
-theorem Tm.subst'_mkTp {γ : Subst' Δ Δ' δ Γ .nil} : substTp (.mk τ) (subst' γ.weakenTp e) = (subst' γ.weakenTp' e).cast rfl (by simp!; rfl) := by
-  apply cast_flip
-  simp! [substTp_subst']
-  congr
-  funext τ x
-  refine x.casesRename fun x => ?_
-  simp! [Subst'.weakenTp']
 
 @[simp]
 theorem Tp.subst_nil : @subst .nil .nil δ τ = τ := by
@@ -799,34 +875,55 @@ theorem Tp.subst_nil : @subst .nil .nil δ τ = τ := by
   exact subst_var
 
 @[simp]
-theorem Tm.subst'_var {δ : Tp.Subst Δ Δ'} : subst' (fun x => var (x.subst δ)) e = e.substTp δ := by
-  generalize h : (fun {τ} x => var (.subst δ x)) = γ
-  replace h {τ} x := congrFun (congrFun h.symm τ) x
-  induction e generalizing Δ' with simp! [*]
-  | lam e ih => exact ih _ (Var.cases rfl fun _ => by simp! [h])
-  | gen e ih =>
-    specialize @ih Δ'.cons δ.weaken (fun {τ} x => (Subst'.weakenTp γ x).cast (by simp!) rfl) ?_
-    . intro τ x
-      refine x.casesRename fun x => ?_
-      simp! [h x, cast]
-    simp [← ih, ← heq_eq_eq]
-    apply subst'_cong <;> simp!
-
-@[simp]
-theorem Tm.subst'_nil : @subst' .nil .nil δ .nil .nil γ τ e = e.cast rfl (by simp) := by
-  cases show @γ = fun {τ} x => var (x.subst δ) from funext fun τ => funext nofun
-  simp
-  cases show δ = .var from funext nofun
+theorem Tm.subst_nil : @subst .nil .nil .nil γ τ e = e := by
+  cases show @γ = fun {τ} x => var x from funext fun τ => funext nofun
   simp
 
-theorem hcongrArg₂ {α : Sort u} {β : α → Sort v} {γ : ∀ a, β a → Sort w} (f : ∀ a b, γ a b) {a₁ a₂ : α} (ha : a₁ = a₂) {b₁ : β a₁} {b₂ : β a₂} (hb : HEq b₁ b₂) : HEq (f a₁ b₁) (f a₂ b₂) :=
-  by cases ha; cases hb; rfl
-
-theorem Tm.rec_cast {τ τ' : Tp Δ} (h : τ = τ') {var lam app gen inst} {t : Tm Δ Γ τ} : @rec motive @var @lam @app @gen @inst Δ Γ τ' (h ▸ t) = (h.rec (motive := fun τ' _ => _ = motive Δ Γ τ' _) rfl).mp (@rec motive @var @lam @app @gen @inst Δ Γ τ t) :=
-  eq_of_heq (.trans (hcongrArg₂ _ h.symm (h.rec (.refl _))) (have := h.rec (motive := fun τ' _ => _ = motive Δ Γ τ' _) rfl; (this.rec (.refl _) : HEq _ (this.mp _))))
+theorem Tm.Var.cases_casesSubst {here there} : @casesSubst Δ' Δ (.cons Γ τ') δ motive (cases here there) τ x = cases here (casesSubst there) x :=
+  x.casesSubst (cases rfl fun _ => rfl)
 
 theorem Tm.inst_inj_cast {τ₂' : Tp Δ} (hτ : Tp.subst (.mk τ₁') τ₁ = Tp.subst (.mk τ₂') τ₂) (he : hτ ▸ @inst Δ Γ τ₁ e₁ τ₁' = @inst Δ Γ τ₂ e₂ τ₂') : τ₁ = τ₂ ∧ τ₁' = τ₂' :=
   (rec_cast hτ).mp (Tm.noConfusion he) fun _ _ hτ _ hτ' => ⟨eq_of_heq hτ, eq_of_heq hτ'⟩
+
+def Tm.Subst.weakenTp (γ : Subst Δ (.subst δ Γ) Γ') : Subst Δ ((Γ.rename .there).subst (Tp.Var.cases τ δ)) Γ'
+  | τ, x => γ (x.cast rfl (by simp!))
+
+@[simp]
+theorem Tm.Subst.apply_cast {γ : Subst Δ Γ Γ'} : γ (x.cast hτ rfl) = (γ x).cast rfl hτ :=
+  by cases hτ; simp
+
+@[simp]
+theorem Tm.subst_cases {γ : Subst Δ Γ Γ'} {x : Var Δ τ (.cons Γ τ')} : (subst γ' (x.cases e γ) : Tm Δ Γ'' τ) = x.cases (e.subst γ') fun x => (γ x).subst γ' :=
+  by cases x <;> rfl
+
+@[simp]
+theorem Tm.substTp_subst_cases {δ : Tp.Subst Δ Δ'} : substTp (fun α => Tp.subst (.mk τ) (α.cases τ' (fun α => (δ α).rename .there))) e = (substTp (fun α => α.cases (τ'.subst (.mk τ)) δ) e).cast (by simp!) (by simp!) :=
+  by simp [← heq_eq_eq]; congr; funext α; cases α <;> simp!
+
+@[simp]
+theorem Tm.casesSubst_cast
+  {Γ : Ctx Δ}
+  {δ : Tp.Subst Δ .nil}
+  {γ : Subst .nil (Γ.subst δ) .nil}
+  {x : Var .nil τ ((Γ.rename .there).subst (Tp.Var.cases τ₂ δ))}
+: Var.casesSubst (Γ := (Γ.rename .there).subst δ.weaken) (motive := fun τ _ => Tm _ _ τ) (fun x => substTp (.mk τ₂) (Subst.rename .there γ (x.cast rfl (by simp!)))) (x.cast rfl (by simp!)) = γ.weakenTp x := by
+  refine x.casesSubst fun x => ?_
+  refine x.casesRename fun {τ} x => ?_
+  simp!
+  have : (x.subst δ).cast (by simp! : _ = (τ.rename .there).subst (Tp.Var.cases τ₂ δ)) (by simp!) = (x.rename .there |>.subst δ.weaken |>.subst (.mk τ₂)).cast (by simp!) rfl := by
+    simp
+    simp!
+  simp! [this]
+  have : (x.subst (fun α => (δ α).rename .there)).cast (by simp! : _ = (τ.rename .there).subst δ.weaken) (by simp) = (x.subst δ |>.rename .there).cast (by simp!) rfl := by
+    simp
+  simp [← heq_eq_eq]
+  rewrite [this, Subst.rename, Var.casesRename_cast]
+  refine .trans (b := (γ (x.subst δ)).renameTp .there |>.substTp (.mk τ₂)) ?_ ?_
+  . congr
+    . simp!
+    simp! [← heq_eq_eq]
+    rfl
+  . simp!
 
 inductive Tm.Steps : (e e' : Tm .nil .nil τ) → Type
   | app (s : e.Steps e') : (app e e₁).Steps (app e' e₁)
@@ -903,6 +1000,15 @@ def Tm.progress : (e : Tm .nil .nil τ) → Val e ⊕ Σ e', Steps e e'
                 | .inl .gen => ⟨_, .inst_gen⟩
                 | .inr ⟨_, s⟩ => ⟨_, .inst s⟩
 
+def Tm.Steps.irrelevant' (h : Nonempty (Σ e', Steps e e')) : Σ e', Steps e e' :=
+  match progress e with
+  | .inl v => (h.elim fun ⟨_, s⟩ => v.not_steps s).elim
+  | .inr s => s
+
+def Tm.Steps.irrelevant (h : Nonempty (Steps e e')) : Steps e e' :=
+  let ⟨_, s⟩ := irrelevant' (h.elim (⟨e', ·⟩))
+  h.elim (deterministic s) ▸ s
+
 inductive Tm.Reduces : (e e' : Tm .nil .nil τ) → Type
   | refl : Reduces e e
   | step (s : Steps e e') (r : Reduces e' e'') : Reduces e e''
@@ -941,19 +1047,36 @@ instance : WellFoundedRelation { x // Acc r x } where
   rel := InvImage r (·.1)
   wf  := ⟨fun ac => InvImage.accessible _ ac.2⟩
 
-def Tm.Reduces.irrelevant' (h : Acc (fun e e' => Nonempty (Steps e' e)) e) : Σ e', Val e' × Reduces e e' :=
+def Tm.Reduces.irrelevant'.go (h : Acc (fun e e' => Nonempty (Steps e' e)) e) : Σ e', Val e' × Reduces e e' :=
   match progress e with
   | .inl v => ⟨_, v, refl⟩
-  | .inr ⟨e', s⟩ => have := ⟨s⟩; let ⟨_, v, r⟩ := irrelevant' (h.inv this); ⟨_, v, step s r⟩
+  | .inr ⟨e', s⟩ => have := ⟨s⟩; let ⟨_, v, r⟩ := go (h.inv this); ⟨_, v, step s r⟩
   termination_by Subtype.mk e h
 
-def Tm.Reduces.irrelevant (h : Nonempty (Σ e', Val e' × Reduces e e')) : Σ e', Val e' × Reduces e e' :=
-  irrelevant' <| by
+def Tm.Reduces.irrelevant' (h : Nonempty (Σ e', Val e' × Reduces e e')) : Σ e', Val e' × Reduces e e' :=
+  irrelevant'.go <| by
     revert h
     intro ⟨e', v, r⟩
     induction r with
     | refl => exact ⟨_, fun _ h => nomatch h.elim v.not_steps⟩
     | step s r ih => exact ⟨_, fun _ h => h.elim s.deterministic ▸ ih v⟩
+
+def Tm.Reduces.irrelevant.go (h : Nonempty (Reduces e e')) (ha : Acc (fun e e'' => e'' ≠ e' ∧ Nonempty (Steps e'' e)) e) : Reduces e e' :=
+  if h' : e = e' then
+    h' ▸ refl
+  else
+    match progress e with
+    | .inl v => False.elim <| match h with | ⟨refl⟩ => h' rfl | ⟨step s _⟩ => v.not_steps s
+    | .inr ⟨e'', s⟩ => have := ⟨h', ⟨s⟩⟩; step s (go (e := e'') (e' := e') (by match h with | ⟨refl⟩ => exact (h' rfl).elim | ⟨step s' r⟩ => exact s.deterministic s' ▸ ⟨r⟩) (ha.inv this))
+  termination_by Subtype.mk e ha
+
+def Tm.Reduces.irrelevant (h : Nonempty (Reduces e e')) : Reduces e e' :=
+  irrelevant.go h <| by
+    revert h
+    intro ⟨r⟩
+    induction r with
+    | refl => exact ⟨_, nofun⟩
+    | step s r ih => exact ⟨_, fun _ ⟨_, h⟩ => h.elim s.deterministic ▸ ih⟩
 
 def Tm.Cand (τ : Tp .nil) :=
   { C : (e : Tm .nil .nil τ) → Prop // ∀ e e', (r : Reduces e e') → (c : C e') → C e }
@@ -988,7 +1111,7 @@ theorem Tm.HT.rename {δ₁ : Tp.Rename Δ Δ'} {e} : HT Δ (fun α => δ' (δ�
       simp at ih₁
       refine Eq.mp ?_ (ih₂.mp (ht _ (ih₁.mpr ht₁)))
       congr
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1005,7 +1128,7 @@ theorem Tm.HT.rename {δ₁ : Tp.Rename Δ Δ'} {e} : HT Δ (fun α => δ' (δ�
       simp at ih₂
       refine Eq.mp ?_ (ih₂.mpr (ht _ (ih₁.mp ht₁)))
       congr
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1055,7 +1178,7 @@ theorem Tm.HT.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ : 
       simp at ih₁
       refine Eq.mp ?_ (ih₂.mp (ht _ (ih₁.mpr ht₁)))
       congr
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1072,7 +1195,7 @@ theorem Tm.HT.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ : 
       simp at ih₂
       refine Eq.mp ?_ (ih₂.mpr (ht _ (ih₁.mp ht₁)))
       congr
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1119,26 +1242,23 @@ theorem Tm.HT.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ : 
       intro α
       cases α <;> rfl
 
-theorem Tm.HT.compose {e} : HT Δ δ η (τ.subst (.mk τ')) e ↔ HT Δ.cons (Tp.Var.cases (.subst δ τ') δ) (Tp.Var.cases ⟨HT Δ δ η τ', HT.expand⟩ η) τ (e.cast rfl (by simp!)) := by
-  exact @subst Δ Δ.cons (Tp.Var.cases (τ'.subst δ) δ) (Tp.Var.cases ⟨HT Δ δ η τ', HT.expand⟩ η) τ .there (.mk τ') (Tp.Var.cases (by simp!) (by simp!)) (Tp.Var.cases (by simp!) (by simp!)) (by exact e)
-
-def Tm.HTSubst Δ (δ : Tp.Subst Δ .nil) (η : ∀ α, Cand (δ α)) (Γ : Ctx Δ) (γ : Subst' Δ .nil δ Γ .nil) : Prop :=
-  ∀ {τ} x, HT Δ δ η τ (γ x)
+def Tm.HTSubst Δ (δ : Tp.Subst Δ .nil) (η : ∀ α, Cand (δ α)) (Γ : Ctx Δ) (γ : Subst .nil (Γ.subst δ) .nil) : Prop :=
+  ∀ {τ} x, HT Δ δ η τ (γ (.subst δ x))
 
 def Tm.HT' Δ Γ τ (e : Tm Δ Γ τ) : Prop :=
-  ∀ δ η γ, (ht_γ : HTSubst Δ δ η Γ @γ) → HT Δ δ η τ (e.subst' @γ)
+  ∀ δ η γ, (ht_γ : HTSubst Δ δ η Γ @γ) → HT Δ δ η τ (e.substTp δ |>.subst @γ)
 
 theorem Tm.ftlr : ∀ e, HT' Δ Γ τ e
-  | var x, δ, η, γ, ht_γ => ht_γ x
-  | lam e, δ, η, γ, ht_γ => ⟨_, .refl, fun e₁ ht => by simp; exact ftlr e δ η (Var.cases e₁ γ) (Var.cases ht ht_γ)⟩
-  | app e e₁, δ, η, γ, ht_γ => let ⟨_, r, ht⟩ := ftlr e δ η γ ht_γ; .expand _ _ (r.app.trans (.step .app_lam .refl)) (ht (e₁.subst' γ) (ftlr e₁ δ η γ ht_γ))
-  | gen e, δ, η, γ, ht_γ => ⟨_, .refl, fun τ' C => by simp; exact ftlr e (Tp.Var.cases τ' δ) (Tp.Var.cases C η) γ.weakenTp' (Var.casesRename fun x => by simp; exact HT.rename.mp (ht_γ x))⟩
-  | inst e τ, δ, η, γ, ht_γ => let ⟨e', r, ht⟩ := ftlr e δ η γ ht_γ; .expand _ (e'.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (.cast (r.inst.trans (.step .inst_gen .refl))) <| have := ht (τ.subst δ) ⟨HT Δ δ η τ, HT.expand⟩; have comp := @HT.compose Δ δ η ‹_› τ (e'.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)); by simp at comp; exact comp.mpr this
+  | var x, δ, η, γ, ht_γ => by simp!; exact ht_γ x
+  | lam e, δ, η, γ, ht_γ => ⟨_, .refl, fun e₁ ht => by simp!; exact ftlr e δ η (Var.cases e₁ γ) (Var.cases ht ht_γ)⟩
+  | app e e₁, δ, η, γ, ht_γ => let ⟨_, r, ht⟩ := ftlr e δ η γ ht_γ; .expand _ _ (r.app.trans (.step .app_lam .refl)) (ht (e₁.substTp δ |>.subst γ) (ftlr e₁ δ η γ ht_γ))
+  | gen e, δ, η, γ, ht_γ => ⟨_, .refl, fun τ' C => by simp!; exact ftlr e (Tp.Var.cases τ' δ) (Tp.Var.cases C η) γ.weakenTp (Var.casesRename fun x => by simp!; exact HT.rename.mp (ht_γ x))⟩
+  | inst e τ, δ, η, γ, ht_γ => let ⟨e', r, ht⟩ := ftlr e δ η γ ht_γ; .expand _ (e'.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (by simp!; exact .cast (r.inst.trans (.step .inst_gen .refl))) <| have := @HT.subst Δ Δ.cons (Tp.Var.cases (τ.subst δ) δ) (Tp.Var.cases ⟨HT Δ δ η τ, HT.expand⟩ η) ‹_› .there (.mk τ) (Tp.Var.cases rfl fun _ => rfl) (Tp.Var.cases (by simp!) (by simp!)) (e'.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)); by simp at this; exact this.mpr (ht (τ.subst δ) ⟨HT Δ δ η τ, HT.expand⟩)
 
 def Tm.termination (e : Tm .nil .nil τ) : Σ e', Val e' × Reduces e e' :=
-  Tm.Reduces.irrelevant <|
+  Tm.Reduces.irrelevant' <|
   match τ, e, ftlr e .var nofun nofun nofun with
-  | .arr τ₁ τ₂, e, ⟨e', r, _⟩ => ⟨.lam (e'.cast (by simp) (by simp)), .lam, by simp at r; have := r.cast (hΓ := rfl) (hτ := show (τ₁.arr τ₂).subst .var = τ₁.arr τ₂ by simp); simp at this; exact this⟩
+  | .arr τ₁ τ₂, e, ⟨e', r, _⟩ => ⟨.lam (e'.cast (by simp) (by simp)), .lam, by simp! at r; have := r.cast (hΓ := rfl) (hτ := show (τ₁.arr τ₂).subst .var = τ₁.arr τ₂ by simp); simp at this; exact this⟩
   | .all τ, _, ⟨e, r, _⟩ => ⟨.gen (e.cast rfl (by simp)), .gen, by simp! at r; have := r.cast (hΓ := rfl) (hτ := show τ.all.subst .var = τ.all by simp); simp at this; exact this⟩
 
 def Tm.PCand (τ τ' : Tp .nil) :=
@@ -1170,7 +1290,7 @@ theorem Tm.Sim.rename {δ₁ : Tp.Rename Δ Δ'} {e e'} : Sim Δ (fun α => δ (
       refine Eq.mp ?_ (ih₂.mp (sim _ _ (ih₁.mpr sim₁)))
       congr
       all_goals
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1191,7 +1311,7 @@ theorem Tm.Sim.rename {δ₁ : Tp.Rename Δ Δ'} {e e'} : Sim Δ (fun α => δ (
       refine Eq.mp ?_ (ih₂.mpr (sim _ _ (ih₁.mp sim₁)))
       congr
       all_goals
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1245,7 +1365,7 @@ theorem Tm.Sim.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ :
       refine Eq.mp ?_ (ih₂.mp (sim _ _ (ih₁.mpr sim₁)))
       congr
       all_goals
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1266,7 +1386,7 @@ theorem Tm.Sim.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ :
       refine Eq.mp ?_ (ih₂.mpr (sim _ _ (ih₁.mp sim₁)))
       congr
       all_goals
-      simp [subst_cast]
+      simp
       congr
       funext τ x
       cases x
@@ -1323,20 +1443,21 @@ theorem Tm.Sim.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ :
 theorem Tm.Sim.compose {e e'} : Sim Δ δ δ' η (τ.subst (.mk τ')) e e' ↔ Sim Δ.cons (Tp.Var.cases (.subst δ τ') δ) (Tp.Var.cases (.subst δ' τ') δ') (Tp.Var.cases ⟨Sim Δ δ δ' η τ', Sim.expand⟩ η) τ (e.cast rfl (by simp!)) (e'.cast rfl (by simp!)) := by
   exact @subst Δ Δ.cons (Tp.Var.cases (τ'.subst δ) δ) (Tp.Var.cases (τ'.subst δ') δ') (Tp.Var.cases ⟨Sim Δ δ δ' η τ', Sim.expand⟩ η) τ .there (.mk τ') (Tp.Var.cases (by simp!) (by simp!)) (Tp.Var.cases (by simp!) (by simp!)) (Tp.Var.cases (by simp!) (by simp!)) (by exact e) (by exact e')
 
-def Tm.SimSubst Δ (δ δ' : Tp.Subst Δ .nil) (η : ∀ α, PCand (δ α) (δ' α)) (Γ : Ctx Δ) (γ : Subst' Δ .nil δ Γ .nil) (γ' : Subst' Δ .nil δ' Γ .nil) : Prop :=
-  ∀ {τ} x, Sim Δ δ δ' η τ (γ x) (γ' x)
+def Tm.SimSubst Δ (δ δ' : Tp.Subst Δ .nil) (η : ∀ α, PCand (δ α) (δ' α)) (Γ : Ctx Δ) (γ : Subst .nil (Γ.subst δ) .nil) (γ' : Subst .nil (Γ.subst δ') .nil) : Prop :=
+  ∀ {τ} x, Sim Δ δ δ' η τ (γ (.subst δ x)) (γ' (.subst δ' x))
 
 def Tm.ExactEq Δ Γ τ (e e' : Tm Δ Γ τ) : Prop :=
-  ∀ δ δ' η γ γ', (sim_γ : SimSubst Δ δ δ' η Γ @γ @γ') → Sim Δ δ δ' η τ (e.subst' @γ) (e'.subst' @γ')
+  ∀ δ δ' η γ γ', (sim_γ : SimSubst Δ δ δ' η Γ @γ @γ') → Sim Δ δ δ' η τ (e.substTp δ |>.subst @γ) (e'.substTp δ' |>.subst @γ')
 
 theorem Tm.parametricity : ∀ e, ExactEq Δ Γ τ e e
-  | var x, δ, δ', η, γ, γ', sim_γ => sim_γ x
-  | lam e, δ, δ', η, γ, γ', sim_γ => ⟨_, _, .refl, .refl, fun e₁ e₁' sim => by simp; exact parametricity e δ δ' η (Var.cases e₁ γ) (Var.cases e₁' γ') (Var.cases sim sim_γ)⟩
-  | app e e₁, δ, δ', η, γ, γ', sim_γ => let ⟨_, _, r, r', sim⟩ := parametricity e δ δ' η γ γ' sim_γ; .expand _ _ _ _ (r.app.trans (.step .app_lam .refl)) (r'.app.trans (.step .app_lam .refl)) (sim (e₁.subst' γ) (e₁.subst' γ') (parametricity e₁ δ δ' η γ γ' sim_γ))
-  | gen e, δ, δ', η, γ, γ', sim_γ => ⟨_, _, .refl, .refl, fun τ₂ τ₂' R => by simp; exact parametricity e (Tp.Var.cases τ₂ δ) (Tp.Var.cases τ₂' δ') (Tp.Var.cases R η) γ.weakenTp' γ'.weakenTp' (Var.casesRename fun x => by simp; exact Sim.rename.mp (sim_γ x))⟩
-  | inst e τ, δ, δ', η, γ, γ', sim_γ => let ⟨e₁, e₁', r, r', sim⟩ := parametricity e δ δ' η γ γ' sim_γ; .expand _ _ (e₁.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (e₁'.substTp (.mk (τ.subst δ')) |>.cast rfl (by simp!)) (.cast (r.inst.trans (.step .inst_gen .refl))) (.cast (r'.inst.trans (.step .inst_gen .refl))) <| have := sim (τ.subst δ) (τ.subst δ') ⟨Sim Δ δ δ' η τ, Sim.expand⟩; have comp := @Sim.compose Δ δ δ' η ‹_› τ (e₁.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (e₁'.substTp (.mk (τ.subst δ')) |>.cast rfl (by simp!)); by simp at comp; exact comp.mpr this
+  | var x, δ, δ', η, γ, γ', sim_γ => by simp!; exact sim_γ x
+  | lam e, δ, δ', η, γ, γ', sim_γ => ⟨_, _, .refl, .refl, fun e₁ e₁' sim => by simp!; exact parametricity e δ δ' η (Var.cases e₁ γ) (Var.cases e₁' γ') (Var.cases sim sim_γ)⟩
+  | app e e₁, δ, δ', η, γ, γ', sim_γ => let ⟨_, _, r, r', sim⟩ := parametricity e δ δ' η γ γ' sim_γ; .expand _ _ _ _ (r.app.trans (.step .app_lam .refl)) (r'.app.trans (.step .app_lam .refl)) (sim (e₁.substTp δ |>.subst γ) (e₁.substTp δ' |>.subst γ') (parametricity e₁ δ δ' η γ γ' sim_γ))
+  | gen e, δ, δ', η, γ, γ', sim_γ => ⟨_, _, .refl, .refl, fun τ₂ τ₂' R => by simp!; exact parametricity e (Tp.Var.cases τ₂ δ) (Tp.Var.cases τ₂' δ') (Tp.Var.cases R η) γ.weakenTp γ'.weakenTp (Var.casesRename fun x => by simp!; exact Sim.rename.mp (sim_γ x))⟩
+  | inst e τ, δ, δ', η, γ, γ', sim_γ => let ⟨e₁, e₁', r, r', sim⟩ := parametricity e δ δ' η γ γ' sim_γ; .expand _ _ (e₁.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (e₁'.substTp (.mk (τ.subst δ')) |>.cast rfl (by simp!)) (by simp!; exact .cast (r.inst.trans (.step .inst_gen .refl))) (by simp!; exact .cast (r'.inst.trans (.step .inst_gen .refl))) <| have := @Sim.subst Δ Δ.cons (Tp.Var.cases (τ.subst δ) δ) (Tp.Var.cases (τ.subst δ') δ') (Tp.Var.cases ⟨Sim Δ δ δ' η τ, Sim.expand⟩ η) ‹_› .there (.mk τ) (Tp.Var.cases rfl fun _ => rfl) (Tp.Var.cases rfl fun _ => rfl) (Tp.Var.cases (by simp!) (by simp!)) (e₁.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (e₁'.substTp (.mk (τ.subst δ')) |>.cast rfl (by simp!)); by simp at this; exact this.mpr (sim (τ.subst δ) (τ.subst δ') ⟨Sim Δ δ δ' η τ, Sim.expand⟩)
 
-example (e : Tm .nil .nil (.all (.arr (.var .here) (.var .here)))) (τ : Tp .nil) (e₀ : Tm .nil .nil τ) : Nonempty (Tm.Reduces (.app (.inst e τ) e₀) e₀) := by
+example (e : Tm .nil .nil (.all (.arr (.var .here) (.var .here)))) (τ : Tp .nil) (e₀ : Tm .nil .nil τ) : Tm.Reduces (.app (.inst e τ) e₀) e₀ := by
+  apply Tm.Reduces.irrelevant
   have sim := e.parametricity .var .var nofun nofun nofun nofun
   simp! at sim
   revert sim

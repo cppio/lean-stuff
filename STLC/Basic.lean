@@ -138,7 +138,7 @@ section
 
 local macro "lemma" M:ident Γ:ident Γ':ident : tactic =>
   `(tactic|
-    induction $M generalizing $Γ $Γ'
+    induction $M:ident generalizing $Γ $Γ'
       <;> simp [*]
       <;> (try constructor)
       <;> congr
@@ -148,19 +148,19 @@ local macro "lemma" M:ident Γ:ident Γ':ident : tactic =>
   )
 
 @[simp]
-theorem Renaming.rename_rename (γ : Renaming Γ Γ') (γ' : Renaming Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ (γ' x)) M :=
+theorem Renaming.rename_rename (γ : Renaming Γ Γ') (γ' : Renaming Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun _ x => γ (γ' x)) M :=
   by lemma M Γ Γ'
 
 @[simp]
-theorem Subst.subst_rename (γ : Subst Γ Γ') (γ' : Renaming Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ (γ' x)) M :=
+theorem Subst.subst_rename (γ : Subst Γ Γ') (γ' : Renaming Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun _ x => γ (γ' x)) M :=
   by lemma M Γ Γ'
 
 @[simp]
-theorem Subst.rename_subst (γ : Renaming Γ Γ') (γ' : Subst Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ.apply (γ' x)) M :=
+theorem Subst.rename_subst (γ : Renaming Γ Γ') (γ' : Subst Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun _ x => γ.apply (γ' x)) M :=
   by lemma M Γ Γ'
 
 @[simp]
-theorem Subst.subst_subst (γ : Subst Γ Γ') (γ' : Subst Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun A x => γ.apply (γ' x)) M :=
+theorem Subst.subst_subst (γ : Subst Γ Γ') (γ' : Subst Γ' Γ'') : γ.apply (γ'.apply M) = apply (fun _ x => γ.apply (γ' x)) M :=
   by lemma M Γ Γ'
 
 end
