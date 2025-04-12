@@ -964,12 +964,12 @@ theorem Tm.Steps.deterministic : (s₁ : Steps e e₁) → (s₂ : Steps e e₂)
       | app => nomatch h
       | app_lam => nomatch h
       | inst s₂ =>
-        have ⟨_, _⟩ := inst_inj_cast h h'
+        let ⟨_, _⟩ := inst_inj_cast h h'
         subst_eqs
         cases s₁.deterministic s₂
         rfl
       | inst_gen =>
-        have ⟨_, _⟩ := inst_inj_cast h h'
+        let ⟨_, _⟩ := inst_inj_cast h h'
         subst_eqs
         nomatch Val.gen.not_steps s₁
     this rfl rfl s₂
@@ -979,11 +979,11 @@ theorem Tm.Steps.deterministic : (s₁ : Steps e e₁) → (s₂ : Steps e e₂)
       | app => nomatch h
       | app_lam => nomatch h
       | inst s₂ =>
-        have ⟨_, _⟩ := inst_inj_cast h h'
+        let ⟨_, _⟩ := inst_inj_cast h h'
         subst_eqs
         nomatch Val.gen.not_steps s₂
       | inst_gen =>
-        have ⟨_, _⟩ := inst_inj_cast h h'
+        let ⟨_, _⟩ := inst_inj_cast h h'
         subst_eqs
         rfl
     this rfl rfl s₂
@@ -1086,6 +1086,14 @@ def Tm.HT Δ (δ : Tp.Subst Δ .nil) (η : ∀ α, Cand (δ α)) (τ : Tp Δ) (e
   | .var α => (η α).val e
   | .arr τ₁ τ₂ => ∃ e₂, ∃ r : Reduces e (.lam e₂), ∀ e₁, (ht : HT Δ δ η τ₁ e₁) → HT Δ δ η τ₂ (e₂.subst (Subst.mk e₁))
   | .all τ => ∃ e', ∃ r : Reduces e (.gen e'), ∀ τ' C, HT Δ.cons (Tp.Var.cases τ' δ) (Tp.Var.cases C η) τ (e'.substTp (.mk τ') |>.cast rfl (by simp!))
+
+def Tm.HT.arr (ht : HT Δ δ η (.arr τ₁ τ₂) e) : Σ e₂, Reduces e (.lam e₂) ×' ∀ e₁, (ht : HT Δ δ η τ₁ e₁) → HT Δ δ η τ₂ (e₂.subst (Subst.mk e₁)) :=
+  let ⟨_, .lam, r⟩ := Reduces.irrelevant' (let ⟨_, r, _⟩ := ht; ⟨_, .lam, r⟩)
+  ⟨_, r, let ⟨_, r', ht⟩ := ht; by cases r.deterministic r' .lam .lam; exact ht⟩
+
+def Tm.HT.all (ht : HT Δ δ η (.all τ) e) : Σ e', Reduces e (.gen e') ×' ∀ τ' C, HT Δ.cons (Tp.Var.cases τ' δ) (Tp.Var.cases C η) τ (e'.substTp (.mk τ') |>.cast rfl (by simp!)) :=
+  let ⟨_, .gen, r⟩ := Reduces.irrelevant' (let ⟨_, r, _⟩ := ht; ⟨_, .gen, r⟩)
+  ⟨_, r, let ⟨_, r', ht⟩ := ht; by cases r.deterministic r' .gen .gen; exact ht⟩
 
 theorem Tm.HT.expand : ∀ {τ} e e', (r : Reduces e e') → (ht : HT Δ δ η τ e') → HT Δ δ η τ e
   | .var α, e, e', r, ht => (η α).property e e' r ht
@@ -1269,6 +1277,16 @@ def Tm.Sim Δ (δ δ' : Tp.Subst Δ .nil) (η : ∀ α, PCand (δ α) (δ' α)) 
   | .var α => (η α).val e e'
   | .arr τ₁ τ₂ => ∃ e₂ e₂', ∃ r : Reduces e (.lam e₂), ∃ r' : Reduces e' (.lam e₂'), ∀ e₁ e₁', (sim : Sim Δ δ δ' η τ₁ e₁ e₁') → Sim Δ δ δ' η τ₂ (e₂.subst (Subst.mk e₁)) (e₂'.subst (Subst.mk e₁'))
   | .all τ => ∃ e₁ e₁', ∃ r : Reduces e (.gen e₁), ∃ r' : Reduces e' (.gen e₁'), ∀ τ₂ τ₂' R, Sim Δ.cons (Tp.Var.cases τ₂ δ) (Tp.Var.cases τ₂' δ') (Tp.Var.cases R η) τ (e₁.substTp (.mk τ₂) |>.cast rfl (by simp!)) (e₁'.substTp (.mk τ₂') |>.cast rfl (by simp!))
+
+def Tm.Sim.arr (sim : Sim Δ δ δ' η (.arr τ₁ τ₂) e e') : Σ e₂ e₂', Reduces e (.lam e₂) × Reduces e' (.lam e₂') ×' ∀ e₁ e₁', (sim : Sim Δ δ δ' η τ₁ e₁ e₁') → Sim Δ δ δ' η τ₂ (e₂.subst (Subst.mk e₁)) (e₂'.subst (Subst.mk e₁')) :=
+  let ⟨_, .lam, r⟩ := Reduces.irrelevant' (let ⟨_, _, r, _, _⟩ := sim; ⟨_, .lam, r⟩)
+  let ⟨_, .lam, r'⟩ := Reduces.irrelevant' (let ⟨_, _, _, r', _⟩ := sim; ⟨_, .lam, r'⟩)
+  ⟨_, _, r, r', let ⟨_, _, r'', r''', sim⟩ := sim; by cases r.deterministic r'' .lam .lam; cases r'.deterministic r''' .lam .lam; exact sim⟩
+
+def Tm.Sim.all (sim : Sim Δ δ δ' η (.all τ) e e') : Σ e₁ e₁', Reduces e (.gen e₁) × Reduces e' (.gen e₁') ×' ∀ τ₂ τ₂' R, Sim Δ.cons (Tp.Var.cases τ₂ δ) (Tp.Var.cases τ₂' δ') (Tp.Var.cases R η) τ (e₁.substTp (.mk τ₂) |>.cast rfl (by simp!)) (e₁'.substTp (.mk τ₂') |>.cast rfl (by simp!)) :=
+  let ⟨_, .gen, r⟩ := Reduces.irrelevant' (let ⟨_, _, r, _, _⟩ := sim; ⟨_, .gen, r⟩)
+  let ⟨_, .gen, r'⟩ := Reduces.irrelevant' (let ⟨_, _, _, r', _⟩ := sim; ⟨_, .gen, r'⟩)
+  ⟨_, _, r, r', let ⟨_, _, r'', r''', sim⟩ := sim; by cases r.deterministic r'' .gen .gen; cases r'.deterministic r''' .gen .gen; exact sim⟩
 
 theorem Tm.Sim.expand : ∀ {τ} e₁ e₁' e₂ e₂', (r : Reduces e₁ e₂) → (r' : Reduces e₁' e₂') → (sim : Sim Δ δ δ' η τ e₂ e₂') → Sim Δ δ δ' η τ e₁ e₁'
   | .var α, e₁, e₁', e₂, e₂', r, r', sim => (η α).property e₁ e₁' e₂ e₂' r r' sim
@@ -1456,18 +1474,41 @@ theorem Tm.parametricity : ∀ e, ExactEq Δ Γ τ e e
   | gen e, δ, δ', η, γ, γ', sim_γ => ⟨_, _, .refl, .refl, fun τ₂ τ₂' R => by simp!; exact parametricity e (Tp.Var.cases τ₂ δ) (Tp.Var.cases τ₂' δ') (Tp.Var.cases R η) γ.weakenTp γ'.weakenTp (Var.casesRename fun x => by simp!; exact Sim.rename.mp (sim_γ x))⟩
   | inst e τ, δ, δ', η, γ, γ', sim_γ => let ⟨e₁, e₁', r, r', sim⟩ := parametricity e δ δ' η γ γ' sim_γ; .expand _ _ (e₁.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (e₁'.substTp (.mk (τ.subst δ')) |>.cast rfl (by simp!)) (by simp!; exact .cast (r.inst.trans (.step .inst_gen .refl))) (by simp!; exact .cast (r'.inst.trans (.step .inst_gen .refl))) <| have := @Sim.subst Δ Δ.cons (Tp.Var.cases (τ.subst δ) δ) (Tp.Var.cases (τ.subst δ') δ') (Tp.Var.cases ⟨Sim Δ δ δ' η τ, Sim.expand⟩ η) ‹_› .there (.mk τ) (Tp.Var.cases rfl fun _ => rfl) (Tp.Var.cases rfl fun _ => rfl) (Tp.Var.cases (by simp!) (by simp!)) (e₁.substTp (.mk (τ.subst δ)) |>.cast rfl (by simp!)) (e₁'.substTp (.mk (τ.subst δ')) |>.cast rfl (by simp!)); by simp at this; exact this.mpr (sim (τ.subst δ) (τ.subst δ') ⟨Sim Δ δ δ' η τ, Sim.expand⟩)
 
-example (e : Tm .nil .nil (.all (.arr (.var .here) (.var .here)))) (τ : Tp .nil) (e₀ : Tm .nil .nil τ) : Tm.Reduces (.app (.inst e τ) e₀) e₀ := by
-  apply Tm.Reduces.irrelevant
-  have sim := e.parametricity .var .var nofun nofun nofun nofun
-  simp! at sim
-  revert sim
-  intro ⟨e', e'', r, _, sim⟩
-  specialize sim τ (.all (.arr (.var .here) (.var .here))) ⟨fun e₁ e₂ => Nonempty (e₁.Reduces e₀), fun _ _ _ _ r _ ⟨r'⟩ => ⟨r.trans r'⟩⟩
-  simp! at sim
-  revert sim
-  intro ⟨e', e'', r', _, sim⟩
-  specialize sim e₀ (.gen (.lam (.var .here))) ⟨.refl⟩
-  revert sim
-  intro ⟨r''⟩
-  simp at r r'
-  exact ⟨r.inst.app.trans <| .step (.app .inst_gen) <| r'.app.trans <| .step .app_lam r''⟩
+def two (e : Tm .nil .nil (.all (.arr (.var .here) (.arr (.var .here) (.var .here))))) : (∀ τ e₁ e₂, (((e.inst τ).app e₁).app e₂).Reduces e₁) ⊕ (∀ τ e₁ e₂, (((e.inst τ).app e₁).app e₂).Reduces e₂) :=
+  let ⟨e₁, r₁, this⟩ := (e.ftlr .var nofun .var nofun).all
+  let ⟨e₂, r₂, this⟩ := (this (.all (.arr (.var .here) (.arr (.var .here) (.var .here)))) ⟨fun e => Nonempty (e.Reduces (.gen (.lam (.lam (.var (.there .here))))) ⊕ e.Reduces (.gen (.lam (.lam (.var .here))))), fun _ _ r ⟨s⟩ => ⟨s.map r.trans r.trans⟩⟩).arr
+  let ⟨e₃, r₃, this⟩ := (this _ ⟨.inl .refl⟩).arr
+  have := this _ ⟨.inr .refl⟩
+  let ⟨e', v, r⟩ := Tm.Reduces.irrelevant' (match this with | ⟨.inl r⟩ => ⟨_, .gen, r⟩ | ⟨.inr r⟩ => ⟨_, .gen, r⟩)
+  if h₁ : e' = .gen (.lam (.lam (.var (.there .here)))) then
+    .inl fun τ e₁' e₂' =>
+    let ⟨_, _, r₁'', r₁', this⟩ := (e.parametricity .var .var nofun .var .var nofun).all
+    let ⟨_, _, r₂'', r₂', this⟩ := (this (.all (.arr (.var .here) (.arr (.var .here) (.var .here)))) τ ⟨fun e e' => Nonempty (e.Reduces (.gen (.lam (.lam (.var .here)))) ⊕ e'.Reduces e₁'), fun _ _ _ _ r r' ⟨s⟩ => ⟨s.map r.trans r'.trans⟩⟩).arr
+    let ⟨_, e, r₃'', r₃', this⟩ := (this (.gen (.lam (.lam (.var (.there .here))))) e₁' ⟨.inr .refl⟩).arr
+    have r' := Tm.Reduces.irrelevant <|
+      match this _ e₂' ⟨.inl .refl⟩ with
+      | ⟨.inl r'⟩ => by
+        cases h₁
+        cases r₁.deterministic r₁'' .gen .gen
+        cases r₂.deterministic r₂'' .lam .lam
+        cases r₃.deterministic r₃'' .lam .lam
+        cases r.deterministic r' .gen .gen
+      | ⟨.inr r'⟩ => ⟨r'⟩
+    by simp at r₁' r₂'; exact r₁'.inst.trans (.step .inst_gen r₂') |>.app.trans (.step .app_lam r₃') |>.app.trans (.step .app_lam r')
+  else if h₂ : e' = .gen (.lam (.lam (.var .here))) then
+    .inr fun τ e₁' e₂' =>
+    let ⟨_, _, r₁'', r₁', this⟩ := (e.parametricity .var .var nofun .var .var nofun).all
+    let ⟨_, _, r₂'', r₂', this⟩ := (this (.all (.arr (.var .here) (.arr (.var .here) (.var .here)))) τ ⟨fun e e' => Nonempty (e.Reduces (.gen (.lam (.lam (.var (.there .here))))) ⊕ e'.Reduces e₂'), fun _ _ _ _ r r' ⟨s⟩ => ⟨s.map r.trans r'.trans⟩⟩).arr
+    let ⟨_, _, r₃'', r₃', this⟩ := (this _ e₁' ⟨.inl .refl⟩).arr
+    have r' := Tm.Reduces.irrelevant <|
+      match this (.gen (.lam (.lam (.var .here)))) e₂' ⟨.inr .refl⟩ with
+      | ⟨.inl r'⟩ => by
+        cases h₂
+        cases r₁.deterministic r₁'' .gen .gen
+        cases r₂.deterministic r₂'' .lam .lam
+        cases r₃.deterministic r₃'' .lam .lam
+        cases r.deterministic r' .gen .gen
+      | ⟨.inr r'⟩ => ⟨r'⟩
+    by simp at r₁' r₂'; exact r₁'.inst.trans (.step .inst_gen r₂') |>.app.trans (.step .app_lam r₃') |>.app.trans (.step .app_lam r')
+  else
+    False.elim <| this.elim (Sum.elim (fun r' => h₁ (r.deterministic r' v .gen)) (fun r' => h₂ (r.deterministic r' v .gen)))
