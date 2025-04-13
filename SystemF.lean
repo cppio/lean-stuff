@@ -132,9 +132,6 @@ def Tm.Var.cases {motive : ∀ τ, (x : Var Δ τ (.cons Γ τ')) → Sort u} (h
 @[simp] theorem Tm.Var.cases_here {here there} : @cases Δ Γ τ' motive here there τ' .here = here := rfl
 @[simp] theorem Tm.Var.cases_there {here there x} : @cases Δ Γ τ' motive here there τ (.there x) = there x := rfl
 
-theorem Tm.Var.cases_cast {motive : ∀ τ, (x : Var Δ τ (.cons Γ τ')) → Sort u} {here there} (eq : τ = τ') : @cases Δ Γ τ' motive here there τ (eq ▸ .here) = eq.symm.rec (motive := fun τ eq => motive τ (eq.symm.ndrec (motive := (Var Δ τ <| Γ.cons ·)) .here)) here :=
-  by cases eq; rfl
-
 @[simp]
 def Tm.Var.map (δ : (τ : Tp Δ) → Tp Δ') {τ Γ} : (x : Var Δ τ Γ) → Var Δ' (δ τ) (Γ.map δ)
   | here => here
@@ -215,6 +212,8 @@ def Tm.Var.cast {τ τ' Γ Γ'} (hτ : τ = τ') (hΓ : Γ = Γ') (x : Var Δ τ
   | .cons .., here => (Ctx.cons.inj hΓ).right ▸ hτ ▸ here
   | .cons .., there x => there (x.cast hτ (Ctx.cons.inj hΓ).left)
 
+@[simp] theorem Tm.Var.cast_there : @cast Δ τ τ' (.cons Γ τ'') (.cons Γ' τ''') hτ hΓ (.there x) = there (x.cast hτ (Ctx.cons.inj hΓ).left) := rfl
+
 @[simp]
 theorem Tm.Var.cast_rfl : cast rfl rfl x = x :=
   by induction x with simp [*, cast]
@@ -223,6 +222,9 @@ theorem Tm.Var.cast_rfl : cast rfl rfl x = x :=
 theorem Tm.Var.cast_cast : cast hτ₂ hΓ₂ (cast hτ₁ hΓ₁ x) = cast (hτ₁.trans hτ₂) (hΓ₁.trans hΓ₂) x :=
   by cases hτ₁; cases hΓ₁; simp
 
+theorem Tm.Var.cases_cast {motive : ∀ τ, (x : Var Δ τ (.cons Γ τ')) → Sort u} {here there} (hτ : τ = τ'') (hΓ : .cons Γ' τ = Γ.cons τ') : HEq (@cases Δ Γ τ' motive here there τ'' (cast hτ hΓ .here)) here :=
+  by cases hτ; cases hΓ; rfl
+
 def Tm.cast {Γ Γ' τ τ'} (hΓ : Γ = Γ') (hτ : τ = τ') (e : Tm Δ Γ τ) : Tm Δ Γ' τ' :=
   match τ', e with
   | _, var x => var (x.cast hτ hΓ)
@@ -230,6 +232,11 @@ def Tm.cast {Γ Γ' τ τ'} (hΓ : Γ = Γ') (hτ : τ = τ') (e : Tm Δ Γ τ) 
   | _, app e e₁ => app (e.cast hΓ (congrArg _ hτ)) (e₁.cast hΓ rfl)
   | .all _, gen e => gen (e.cast (congrArg _ hΓ) (Tp.all.inj hτ))
   | _, inst e τ => hτ ▸ inst (e.cast hΓ rfl) τ
+
+@[simp] theorem Tm.cast_var : @cast Δ Γ Γ' τ τ' hΓ hτ (var x) = var (x.cast hτ hΓ) := by simp [cast]
+@[simp] theorem Tm.cast_lam : @cast Δ Γ Γ' (.arr τ₁ τ₂) (.arr τ₁' τ₂') hΓ hτ (lam e) = lam (e.cast (congr (congrArg Ctx.cons hΓ) (Tp.arr.inj hτ).left) (Tp.arr.inj hτ).right) := by simp [cast]
+@[simp] theorem Tm.cast_app : @cast Δ Γ Γ' τ τ' hΓ hτ (app e e₁) = app (e.cast hΓ (congrArg _ hτ)) (e₁.cast hΓ rfl) := by simp [cast]
+@[simp] theorem Tm.cast_gen : @cast Δ Γ Γ' (.all τ) (.all τ') hΓ hτ (gen e) = gen (e.cast (congrArg _ hΓ) (Tp.all.inj hτ)) := by simp [cast]
 
 @[simp]
 theorem Tm.cast_rfl : cast rfl rfl e = e :=
@@ -339,7 +346,7 @@ theorem Tm.Var.heq_here {τ τ' Γ Γ'} (hτ : τ = τ') (hΓ : Γ = Γ') : HEq 
 theorem Tm.Var.map_id (h : ∀ τ, δ τ = τ) : map δ x = x.cast (by simp [h]) (by simp [h]) := by
   induction x with
   | here => simp [← heq_eq_eq, h]
-  | there x ih => simp [cast, ih]
+  | there x ih => simp [ih]
 
 @[simp]
 theorem Tm.Var.map_map (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : cast rfl (by simp [h]) (map δ₂ (map δ₁ x)) = cast (by simp [h]) rfl (map δ₂' (map δ₁' x)) := by
@@ -349,7 +356,7 @@ theorem Tm.Var.map_map (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : cas
       subst_eqs
       rfl
     exact this ..
-  | there x ih => simp [cast, ih]
+  | there x ih => simp [ih]
 
 theorem Tm.Var.map_map' (h : ∀ α, δ₂ (δ₁ α) = δ₂' (δ₁' α)) : HEq (map δ₂ (map δ₁ x)) (map δ₂' (map δ₁' x)) := by
   have := heq_of_eq (map_map h (x := x))
@@ -364,7 +371,7 @@ theorem Tm.Var.map_map'' (h : ∀ α, δ₂ (δ₁ α) = δ α) : map δ₂ (map
       subst_eqs
       rfl
     exact this
-  | there x ih => simp [cast, ih]
+  | there x ih => simp [ih]
 
 @[simp]
 theorem Tm.renameTp_cast : renameTp δ (cast hΓ hτ e) = cast (congrArg _ hΓ) (congrArg _ hτ) (e.renameTp δ) :=
@@ -392,11 +399,7 @@ theorem Eq.rec_heq' {refl} : HEq lhs (@rec α a motive refl b h) = HEq lhs refl 
 @[simp]
 theorem Tm.renameTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Rename Δ' Δ''} : renameTp δ₂ (renameTp δ₁ e) = (renameTp (fun α => δ₂ (δ₁ α)) e).cast (by simp) (by simp) := by
   induction e generalizing Δ' Δ'' with simp [*]
-  | var => simp [cast]
-  | lam => simp [cast]
-  | app => simp [cast]
   | gen =>
-    simp [cast]
     simp [← heq_eq_eq]
     congr
     funext α
@@ -409,11 +412,7 @@ theorem Tm.renameTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Rename Δ' �
 @[simp]
 theorem Tm.substTp_substTp {δ₁ : Tp.Subst Δ Δ'} {δ₂ : Tp.Subst Δ' Δ''} {e : Tm Δ Γ τ} : substTp δ₂ (substTp δ₁ e) = (substTp (fun α => (δ₁ α).subst δ₂) e).cast (by simp) (by simp) := by
   induction e generalizing Δ' Δ'' with simp [*]
-  | var => simp [cast]
-  | lam => simp [cast]
-  | app => simp [cast]
   | gen =>
-    simp [cast]
     simp [← heq_eq_eq]
     congr
     funext α
@@ -518,13 +517,13 @@ theorem Tm.substTp_var {e : Tm Δ Γ τ} : substTp .var e = e.cast (by simp) (by
   have {Δ} : Tp.Subst.weaken (Δ := Δ) .var = .var := by
     funext α
     cases α <;> rfl
-  induction e with simp [cast, *]
+  induction e with simp [*]
   | gen e ih => simp [← heq_eq_eq]; rewrite [this]; simp [ih]
   | inst e τ ih => simp [← heq_eq_eq]; apply inst_cong <;> simp [this]
 
 @[simp]
 theorem Tm.substTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ''} : substTp δ₂ (renameTp δ₁ e) = (substTp (fun α => δ₂ (δ₁ α)) e).cast (by simp) (by simp) := by
-  induction e generalizing Δ' Δ'' with simp [*] <;> simp [cast]
+  induction e generalizing Δ' Δ'' with simp [*]
   | gen e ih =>
     have : @Eq (Tp.Subst ..) (fun α => Tp.Var.cases (.var .here) (fun α => (δ₂ α).rename .there) (Tp.Var.cases .here (fun α => (δ₁ α).there) α)) (.weaken fun α => δ₂ (δ₁ α)) := by
       funext α
@@ -540,7 +539,7 @@ theorem Tm.substTp_renameTp {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ'
 
 @[simp]
 theorem Tm.renameTp_substTp {δ₁ : Tp.Subst Δ Δ'} {δ₂ : Tp.Rename Δ' Δ''} : renameTp δ₂ (substTp δ₁ e) = (substTp (fun α => (δ₁ α).rename δ₂) e).cast (by simp) (by simp) := by
-  induction e generalizing Δ' Δ'' with simp [*] <;> simp [cast]
+  induction e generalizing Δ' Δ'' with simp [*]
   | gen e ih =>
     have : @Eq (Tp.Subst ..) (fun α => Tp.rename δ₂.weaken (Tp.Var.cases (.var .here) (fun α => (δ₁ α).rename .there) α)) (.weaken fun α => (δ₁ α).rename δ₂) := by
       funext α
@@ -1044,8 +1043,8 @@ theorem Tm.HT.rename {δ₁ : Tp.Rename Δ Δ'} {e} : HT Δ (fun α => δ' (δ�
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
     . generalize h : e.cast _ _ = e'
       replace h : e = e'.cast rfl _ := cast_flip' h
       cases h
@@ -1061,8 +1060,8 @@ theorem Tm.HT.rename {δ₁ : Tp.Rename Δ Δ'} {e} : HT Δ (fun α => δ' (δ�
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
   | all τ ih =>
     constructor
     . intro ⟨e, r, ht⟩
@@ -1111,8 +1110,8 @@ theorem Tm.HT.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ : 
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
     . generalize h : e.cast _ _ = e'
       replace h : e = e'.cast rfl _ := cast_flip' h
       cases h
@@ -1128,8 +1127,8 @@ theorem Tm.HT.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ : 
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
   | all τ ih =>
     constructor
     . intro ⟨e, r, ht⟩
@@ -1234,8 +1233,8 @@ theorem Tm.Sim.rename {δ₁ : Tp.Rename Δ Δ'} {e e'} : Sim Δ (fun α => δ (
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
     . generalize h : e.cast _ _ = e₁
       generalize h' : e'.cast _ _ = e₁'
       replace h : e = e₁.cast rfl _ := cast_flip' h
@@ -1255,8 +1254,8 @@ theorem Tm.Sim.rename {δ₁ : Tp.Rename Δ Δ'} {e e'} : Sim Δ (fun α => δ (
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
   | all τ ih =>
     constructor
     . intro ⟨e, e', r, r', sim⟩
@@ -1309,8 +1308,8 @@ theorem Tm.Sim.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ :
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
     . generalize h : e.cast _ _ = e₁
       generalize h' : e'.cast _ _ = e₁'
       replace h : e = e₁.cast rfl _ := cast_flip' h
@@ -1330,8 +1329,8 @@ theorem Tm.Sim.subst {δ₁ : Tp.Rename Δ Δ'} {δ₂ : Tp.Subst Δ' Δ} (hδ :
       funext τ x
       cases x
       case there x => nomatch x
-      simp [Var.cases_cast, ← heq_eq_eq, Var.cast]
-      rfl
+      simp [← heq_eq_eq]
+      exact .symm <| Var.cases_cast ..
   | all τ ih =>
     constructor
     . intro ⟨e, e', r, r', sim⟩
