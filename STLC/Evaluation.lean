@@ -43,22 +43,26 @@ def progress : (M : Exp .nil A) → Val M ⊕ Σ M', Steps M M'
   | .inl M        => .inl .inl
   | .inr M        => .inl .inr
   | .case M M₁ M₂ => .inr <|
-                     match progress M with
+                     have := progress M
+                     match this with
                      | .inl .inl => ⟨_, .case_inl⟩
                      | .inl .inr => ⟨_, .case_inr⟩
                      | .inr ⟨_, s⟩ => ⟨_, .case s⟩
   | .pair M₁ M₂   => .inl .pair
   | .prl M        => .inr <|
-                     match progress M with
+                     have := progress M
+                     match this with
                      | .inl .pair => ⟨_, .prl_pair⟩
                      | .inr ⟨_, s⟩ => ⟨_, .prl s⟩
   | .prr M        => .inr <|
-                     match progress M with
+                     have := progress M
+                     match this with
                      | .inl .pair => ⟨_, .prr_pair⟩
                      | .inr ⟨_, s⟩ => ⟨_, .prr s⟩
   | .lam M        => .inl .lam
   | .ap M M₁      => .inr <|
-                     match progress M with
+                     have := progress M
+                     match this with
                      | .inl .lam => ⟨_, .ap_lam⟩
                      | .inr ⟨_, s⟩ => ⟨_, .ap s⟩
 

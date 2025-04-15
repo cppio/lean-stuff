@@ -1,7 +1,5 @@
 import STLC.Basic
 
-import Mathlib.Util.CompileInductive
-
 namespace STLC.Reduction
 
 inductive Steps : (M M' : Exp Γ A) → Type
