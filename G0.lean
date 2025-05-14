@@ -216,7 +216,7 @@ variable {X} [TopologicalSpace X]
 
 theorem IsMeagre.union {s t : Set X} (hs : IsMeagre s) (ht : IsMeagre t) : IsMeagre (s ∪ t) := by
   have := isMeagre_iUnion (s := fun n => if n = 0 then s else t) fun n => by dsimp; split; exact hs; exact ht
-  refine Eq.mp ?_ this
+  refine cast ?_ this
   congr
   simp
   ext x
@@ -649,15 +649,18 @@ lemma splitting {n a Y Θ Φ} (hY : GKernel Y Θ Φ) (h : @Realized X n a Y Θ �
     . exact hα₁.image ⟨fun i => y i.castSucc, rfl⟩
     . exact hα₀.image ⟨fun i => y i.castSucc, rfl⟩
 
+def BorelSet (Y : Set X) : Prop :=
+  @MeasurableSet X (borel X) Y
+
 def CountableBorelChromatic (Y : Set X) (G : X → X → Prop) : Prop :=
-  ∃ A : Nat → Set X, (∀ n, @MeasurableSet _ (borel X) (A n) ∧ Independent G (A n)) ∧ Y = ⋃ n, A n
+  ∃ A : Nat → Set X, (∀ n, BorelSet (A n) ∧ Independent G (A n)) ∧ Y = ⋃ n, A n
 
 variable [T2Space X]
 
 lemma HW Θ Φ : ∃ Y, @GKernel X Y Θ Φ ∧ CountableBorelChromatic Yᶜ fun x y => ∃ z, Θ z = (x, y) :=
   sorry
 
-theorem 𝔾₀_dichotomy {G} [IsSymm X G] (G_analytic : MeasureTheory.AnalyticSet fun (x, y) => G x y) : CountableBorelChromatic .univ G ≠ ∃ φ : 𝔾₀ →r G, Continuous φ := by
+theorem 𝔾₀_dichotomy {G} [IsSymm X G] (G_analytic : MeasureTheory.AnalyticSet {(x, y) | G x y}) : CountableBorelChromatic .univ G ≠ ∃ φ : 𝔾₀ →r G, Continuous φ := by
   borelize X (Nat → Bool)
   simp
   simp only [iff_iff_and_or_not_and_not, not_or]
@@ -683,7 +686,7 @@ theorem 𝔾₀_dichotomy {G} [IsSymm X G] (G_analytic : MeasureTheory.AnalyticS
   cases G_analytic with
   | inl h =>
     replace h := congrFun h
-    simp [-eq_iff_iff, EmptyCollection.emptyCollection] at h
+    simp [-eq_iff_iff, EmptyCollection.emptyCollection, setOf] at h
     replace h := funext fun a => funext (h a)
     cases h
     left
@@ -706,7 +709,7 @@ theorem 𝔾₀_dichotomy {G} [IsSymm X G] (G_analytic : MeasureTheory.AnalyticS
     have open0 : IsOpen {x | ∃ h : x 0 = 0, Φ x ∈ U} := by
       simp +contextual [Φ, -exists_prop]
       suffices IsOpen (N ![0] ∩ Prod.fst ∘ Θ ∘ (fun x i => x i.succ) ⁻¹' U) by
-        refine Eq.mp ?_ this
+        refine cast ?_ this
         congr
         ext
         simp [mem_N]
@@ -719,7 +722,7 @@ theorem 𝔾₀_dichotomy {G} [IsSymm X G] (G_analytic : MeasureTheory.AnalyticS
     have open' : IsOpen {x | ∃ h : x 0 ≠ 0, Φ x ∈ U} := by
       simp +contextual [Φ, -exists_prop]
       suffices IsOpen ((N ![0])ᶜ ∩ Prod.snd ∘ Θ ∘ (fun x i => x i.succ) ⁻¹' U) by
-        refine Eq.mp ?_ this
+        refine cast ?_ this
         congr
         ext
         simp [mem_N]
@@ -911,3 +914,75 @@ theorem 𝔾₀_dichotomy {G} [IsSymm X G] (G_analytic : MeasureTheory.AnalyticS
   rewrite [← this] at subset
   let ⟨α, _⟩ := (a n).property
   exact ⟨(_, _, _), subset ⟨α.γ_g ⟨k, hn⟩ t, α.φ_f _, α.φ_f _⟩, α.edge ⟨k, hn⟩ t⟩
+
+example {Y G} (Y_meas : BorelSet Y) : CountableBorelChromatic Y G ↔ ∃ c : Y → Nat, @Measurable _ _ (@Subtype.instMeasurableSpace X Y (borel X)) _ c ∧ ∀ n, Independent G (Subtype.val '' (c ⁻¹' {n})) := by
+  borelize X
+  constructor
+  . intro ⟨A, hA, hY⟩
+    use fun x => sInf {n | x.val ∈ A n}
+    constructor
+    . intro U U_meas
+      suffices MeasurableSet (⋃ n ∈ U, (fun x : Y => sInf {n | x.val ∈ A n}) ⁻¹' {n}) by
+        simp at this  
+        exact this
+      apply MeasurableSet.sUnion (Set.countable_range _)
+      simp
+      intro n
+      apply MeasurableSet.sUnion (Set.countable_range _)
+      simp
+      intro hn
+      simp [Set.preimage, -measurableSet_setOf]
+      suffices MeasurableSet (A n \ ⋃ i < n, A i) by
+        apply MeasurableSet.of_subtype_image
+        refine cast ?_ this
+        congr
+        ext x
+        simp [hY]
+        constructor
+        . intro ⟨h, h'⟩
+          refine ⟨?_, n, h⟩
+          rewrite [Nat.sInf_def ⟨n, h⟩]
+          simp [Nat.find_eq_iff, h]
+          exact h'
+        . intro ⟨h, h'⟩
+          have := Nat.sInf_mem (s := {n | x ∈ A n}) h'
+          rewrite [h] at this
+          refine ⟨this, ?_⟩
+          intro n' hn'
+          exact Nat.not_mem_of_lt_sInf (h ▸ hn')
+      apply (hA n).left.diff
+      apply MeasurableSet.iUnion
+      intro n
+      apply MeasurableSet.iUnion
+      intro hn
+      exact (hA n).left
+    . intro n x hx y hy h
+      simp at hx hy
+      refine (hA n).right x ?_ y ?_ h
+      . have := congrArg (x ∈ ·) hY
+        simp [hx.right] at this
+        have := Nat.sInf_mem (s := {n | x ∈ A n}) this
+        rewrite [hx.left] at this
+        exact this
+      . have := congrArg (y ∈ ·) hY
+        simp [hy.right] at this
+        have := Nat.sInf_mem (s := {n | y ∈ A n}) this
+        rewrite [hy.left] at this
+        exact this
+  . intro ⟨c, c_Meas, c_Indep⟩
+    use fun n => Subtype.val '' (c ⁻¹' {n})
+    simp
+    constructor
+    . intro n
+      constructor
+      . apply Y_meas.subtype_image
+        apply c_Meas
+        simp
+      . exact c_Indep n
+    . ext x
+      simp
+      constructor
+      . intro h
+        exact ⟨c ⟨x, h⟩, h, rfl⟩
+      . intro ⟨_, h, _⟩
+        exact h
