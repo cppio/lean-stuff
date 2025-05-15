@@ -1069,26 +1069,6 @@ lemma HW Θ Φ (Θ_cont : Continuous Θ) (Φ_cont : Continuous Φ) : ∃ Y, @GKe
   have indeps_countable Y : (indeps Y).Countable := Set.Countable.mono (Set.subset_univ _) Subtype.countable
   let indeps' o ho := indeps (Ys o ho)
 
-  /-
-  suffices ∃ o ho, prime _ (Ys o ho).property.left = Ys o ho by
-    rcases this with ⟨o, ho, h⟩
-    refine ⟨Ys o ho, ?_, (Ys o ho).property.right⟩
-    constructor
-    intro n a s indep
-    simp [prime] at h
-    specialize h n s a indep
-    generalize_proofs pf at h
-    generalize hB : Classical.choose pf = B at h
-    replace hB := hB ▸ Classical.choose_spec pf
-    have : A a s (Ys o ho) Θ Φ ⊆ Ys o ho := by
-      intro _ ⟨α, hα, h⟩
-      cases h
-      apply hα.image
-      simp
-    specialize h this hB.right.left
-    simp at h
-    exact h
-    -/
   suffices ∃ o ho, indeps' o ho = indeps' (Order.succ o) (Ordinal.IsLimit.succ_lt (isLimit_omega 1) ho) by
     rcases this with ⟨o, ho, h⟩
     replace h := subset_of_eq h.symm
