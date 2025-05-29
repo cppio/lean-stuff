@@ -44,9 +44,7 @@ theorem no_embedding
   suffices Ω < Ω from
     Order.lt_wf.irrefl this
   refine ⟨down Ω, fun x => ⟨down (Ω.segment x), ?_⟩, fun h => ?_⟩
-  . change _ < _
-    simp [up_down]
+  . simp [Ω, up_down]
     exact ⟨x, id, id⟩
-  . change _ < _
-    simp [up_down]
+  . simp [Ω, up_down]
     exact Ω.segment_mono h
