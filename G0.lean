@@ -977,12 +977,12 @@ lemma grow (G : X → X → Prop) (G_analytic : AnalyticSet {(x, y) | G x y}) {A
     ext y
     simp [A'']
     intro hy x hx h
-    exact hB₁.not_mem_of_mem_left ⟨y, hy, h⟩ hx
+    exact hB₁.notMem_of_mem_left ⟨y, hy, h⟩ hx
   specialize this disjoint
   rcases this with ⟨B', hB', hB'₁, B'_borel⟩
   use B ∩ B', B_borel.inter B'_borel, Set.subset_inter hB hB'
   intro x hx y hy h
-  exact hB'₁.not_mem_of_mem_left ⟨x, Set.mem_of_mem_inter_left hx, h⟩ (Set.mem_of_mem_inter_right hy)
+  exact hB'₁.notMem_of_mem_left ⟨x, Set.mem_of_mem_inter_left hx, h⟩ (Set.mem_of_mem_inter_right hy)
 
 open Ordinal Cardinal in
 lemma HW Θ Φ (Θ_cont : Continuous Θ) (Φ_cont : Continuous Φ) : ∃ Y, @GKernel X Y Θ Φ ∧ CountableBorelChromatic Yᶜ fun x y => ∃ z, Θ z = (x, y) := by
@@ -1485,7 +1485,7 @@ example {Y G} (Y_meas : BorelSet Y) : CountableBorelChromatic Y G ↔ ∃ c : Y 
           rewrite [h] at this
           refine ⟨this, ?_⟩
           intro n' hn'
-          exact Nat.not_mem_of_lt_sInf (h ▸ hn')
+          exact Nat.notMem_of_lt_sInf (h ▸ hn')
       apply (hA n).left.diff
       apply MeasurableSet.iUnion
       intro n
