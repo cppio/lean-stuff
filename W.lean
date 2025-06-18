@@ -1,10 +1,13 @@
 inductive W {α : Type u} (β : α → Type v)
   | mk a (t : β a → W β)
 
-private unsafe def W.rec'.{u_1} {α : Type u} {β : α → Type v} {motive : W β → Sort u_1} (mk : ∀ a t, (∀ a, motive (t a)) → motive ⟨a, t⟩) : ∀ t, motive t
+private def W.rec'.{u_1} {α : Type u} {β : α → Type v} {motive : W β → Sort u_1} (mk : ∀ a t, (∀ a, motive (t a)) → motive ⟨a, t⟩) : ∀ t, motive t
   | .mk a t => mk a t fun a => @rec' α β motive mk (t a)
 
-attribute [implemented_by W.rec'] W.rec
+@[csimp]
+private theorem W.rec_eq_rec' : @rec = @rec' := by
+  funext α β motive mk t
+  induction t with simp! [*]
 
 def ℕ : Type :=
   W fun
