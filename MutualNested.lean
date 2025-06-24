@@ -9,12 +9,12 @@ namespace Inductive
 -- ∀ p, (f p → p) → p
 def μ f (hf : Monotone f) : Prop :=
   f (μ f hf)
-  least_fixpoint monotonicity hf
+  inductive_fixpoint monotonicity hf
 
 namespace μ
 
 def rec : ∀ p, (f p → p) → μ f hf → p :=
-  fixpoint_induct f hf
+  induct f hf
 
 def fold : f (μ f hf) → μ f hf :=
   (eq_def f hf).mpr
@@ -32,12 +32,12 @@ mutual
 -- ∀ p q, (f p q → p) → (g p q → q) → p
 def P f g (hf : Monotone₂ f) (hg : Monotone₂ g) : Prop :=
   f (P f g hf hg) (Q f g hf hg)
-  least_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hf hp hq
+  inductive_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hf hp hq
 
 -- ∀ p q, (f p q → p) → (g p q → q) → q
 def Q f g (hf : Monotone₂ f) (hg : Monotone₂ g) : Prop :=
   g (P f g hf hg) (Q f g hf hg)
-  least_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hg hp hq
+  inductive_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hg hp hq
 
 end
 
@@ -121,12 +121,12 @@ namespace Coinductive
 -- ∃ p, (p → f p) ∧ p
 def ν f (hf : Monotone f) : Prop :=
   f (ν f hf)
-  greatest_fixpoint monotonicity fun _ _ h => hf h
+  coinductive_fixpoint monotonicity fun _ _ h => hf h
 
 namespace ν
 
 def corec : ∀ p, (p → f p) → p → ν f hf :=
-  fixpoint_induct f hf
+  coinduct f hf
 
 def unfold : ν f hf → f (ν f hf) :=
   (eq_def f hf).mp
@@ -144,12 +144,12 @@ mutual
 -- ∃ p q, (p → f p q) ∧ (q → g p q) ∧ p
 def P f g (hf : Monotone₂ f) (hg : Monotone₂ g) : Prop :=
   f (P f g hf hg) (Q f g hf hg)
-  greatest_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hf hp hq
+  coinductive_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hf hp hq
 
 -- ∃ p q, (p → f p q) ∧ (q → g p q) ∧ q
 def Q f g (hf : Monotone₂ f) (hg : Monotone₂ g) : Prop :=
   g (P f g hf hg) (Q f g hf hg)
-  greatest_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hg hp hq
+  coinductive_fixpoint monotonicity fun _ _ ⟨hp, hq⟩ => hg hp hq
 
 end
 
