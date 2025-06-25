@@ -89,13 +89,17 @@ def gen (c : C) : M β where
 
 unseal gen
 
-variable {hd tl}
+variable {hd tl} {c : C}
 
 @[simp]
 theorem hd_gen : (gen hd tl c).hd = hd c := rfl
 
 @[simp]
 theorem tl_gen : (gen hd tl c).tl b = gen hd tl (tl c b) := rfl
+
+unif_hint {rhs : α} where hd c ≟ rhs ⊢ (gen hd tl c).hd ≟ rhs
+unif_hint {b : β (gen hd tl c).hd} {rhs : M β} where gen hd tl (tl c b) ≟ rhs ⊢ (gen hd tl c).tl b ≟ rhs
+unif_hint {b : β (hd c)} {rhs : M β} where gen hd tl (tl c b) ≟ rhs ⊢ (gen hd tl c).tl b ≟ rhs
 
 end M
 
@@ -197,12 +201,18 @@ def gen (c : C i) : IM s i where
 
 unseal gen
 
-variable {hd tl}
+variable {hd tl} {i} {c : C i}
 
 @[simp]
-theorem hd_gen {c : C i} : (gen @hd @tl c).hd = hd c := rfl
+theorem hd_gen : (gen @hd @tl c).hd = hd c := rfl
 
 @[simp]
-theorem tl_gen {c : C i} {b} : (gen @hd @tl c).tl b = gen @hd @tl (tl c b) := rfl
+theorem tl_gen : (gen @hd @tl c).tl b = gen @hd @tl (tl c b) := rfl
+
+unif_hint {rhs : α i} where hd c ≟ rhs ⊢ (gen @hd @tl c).hd ≟ rhs
+unif_hint {b : β i (gen @hd @tl c).hd} {rhs : IM s (s i (gen @hd @tl c).hd b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
+unif_hint {b : β i (gen @hd @tl c).hd} {rhs : IM s (s i (hd c) b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
+unif_hint {b : β i (hd c)} {rhs : IM s (s i (gen @hd @tl c).hd b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
+unif_hint {b : β i (hd c)} {rhs : IM s (s i (hd c) b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
 
 end IM
