@@ -80,16 +80,14 @@ theorem ext {r : (m m' : M β) → Prop} (hd : ∀ {m m'}, (h : r m m') → m.hd
     cases hd_eq h₂ ▸ hd h
     exact congrArg _ <| funext fun b => tl_eq h₁ b ▸ tl_eq h₂ b ▸ ih (tl h b)
 
-variable {C : Sort w} (hd : (c : C) → α) (tl : ∀ c, (b : β (hd c)) → C)
+variable {C : Sort w} (hd : (c : C) → α) (tl : ∀ c, (b : β (hd c)) → C) (c : C)
 
 @[irreducible]
-def gen (c : C) : M β where
+def gen : M β where
   val      ℓ := ℓ.rec (fun _ => .hole) (fun _ gen c => .node (hd c) fun b => gen (tl c b)) c
   property ℓ := ℓ.rec (fun _ => .hole) (fun _ gen c => .node (hd c) fun b => gen (tl c b)) c
 
 unseal gen
-
-variable {hd tl} {c : C}
 
 @[simp]
 theorem hd_gen : (gen hd tl c).hd = hd c := rfl
@@ -100,6 +98,26 @@ theorem tl_gen : (gen hd tl c).tl b = gen hd tl (tl c b) := rfl
 unif_hint {rhs : α} where hd c ≟ rhs ⊢ (gen hd tl c).hd ≟ rhs
 unif_hint {b : β (gen hd tl c).hd} {rhs : M β} where gen hd tl (tl c b) ≟ rhs ⊢ (gen hd tl c).tl b ≟ rhs
 unif_hint {b : β (hd c)} {rhs : M β} where gen hd tl (tl c b) ≟ rhs ⊢ (gen hd tl c).tl b ≟ rhs
+
+variable (hd : α) (tl : (b : β hd) → M β)
+
+@[irreducible]
+def mk : M β where
+  val      ℓ := ℓ.casesOn .hole fun ℓ => .node hd fun b => (tl b).1 ℓ
+  property ℓ := ℓ.casesOn .hole fun ℓ => .node hd fun b => (tl b).2 ℓ
+
+unseal mk
+
+@[simp]
+theorem hd_mk : (mk hd tl).hd = hd := rfl
+
+@[simp]
+theorem tl_mk : (mk hd tl).tl = tl := rfl
+
+unif_hint {rhs : α} where hd ≟ rhs ⊢ (mk hd tl).hd ≟ rhs
+unif_hint {rhs : (b : β hd) → M β} where tl ≟ rhs ⊢ (mk hd tl).tl ≟ rhs
+unif_hint {b : β hd} {rhs : M β} where tl b ≟ rhs ⊢ (mk hd tl).tl b ≟ rhs
+unif_hint {b : β (mk hd tl).hd} {rhs : M β} where tl b ≟ rhs ⊢ (mk hd tl).tl b ≟ rhs
 
 end M
 
@@ -192,16 +210,14 @@ theorem ext {r : ∀ i, (m m' : IM s i) → Prop} (hd : ∀ {i m m'}, (h : r i m
     cases hd_eq h₂ ▸ hd h
     exact congrArg _ <| funext fun b => tl_eq h₁ b ▸ tl'_eq h₂ b ▸ ih (tl h b)
 
-variable {C : (i : ι) → Sort x} (hd : ∀ {i}, (c : C i) → α i) (tl : ∀ {i} c, (b : β i (hd c)) → C (s i (hd c) b))
+variable {C : (i : ι) → Sort x} (hd : ∀ {i}, (c : C i) → α i) (tl : ∀ {i} c, (b : β i (hd c)) → C (s i (hd c) b)) {i} (c : C i)
 
 @[irreducible]
-def gen (c : C i) : IM s i where
+def gen : IM s i where
   val      ℓ := ℓ.rec (fun _ _ => .hole) (fun _ gen i c => .node (hd c) fun b => gen (s i (hd c) b) (tl c b)) i c
   property ℓ := ℓ.rec (fun _ _ => .hole) (fun _ gen i c => .node (hd c) fun b => gen (s i (hd c) b) (tl c b)) i c
 
 unseal gen
-
-variable {hd tl} {i} {c : C i}
 
 @[simp]
 theorem hd_gen : (gen @hd @tl c).hd = hd c := rfl
@@ -214,5 +230,25 @@ unif_hint {b : β i (gen @hd @tl c).hd} {rhs : IM s (s i (gen @hd @tl c).hd b)} 
 unif_hint {b : β i (gen @hd @tl c).hd} {rhs : IM s (s i (hd c) b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
 unif_hint {b : β i (hd c)} {rhs : IM s (s i (gen @hd @tl c).hd b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
 unif_hint {b : β i (hd c)} {rhs : IM s (s i (hd c) b)} where gen @hd @tl (tl c b) ≟ rhs ⊢ (gen @hd @tl c).tl b ≟ rhs
+
+variable (hd : α i) (tl : (b : β i hd) → IM s (s i hd b))
+
+@[irreducible]
+def mk : IM s i where
+  val      ℓ := ℓ.casesOn .hole fun ℓ => .node hd fun b => (tl b).1 ℓ
+  property ℓ := ℓ.casesOn .hole fun ℓ => .node hd fun b => (tl b).2 ℓ
+
+unseal mk
+
+@[simp]
+theorem hd_mk : (mk hd tl).hd = hd := rfl
+
+@[simp]
+theorem tl_mk : (mk hd tl).tl = tl := rfl
+
+unif_hint {rhs : α i} where hd ≟ rhs ⊢ (mk hd tl).hd ≟ rhs
+unif_hint {rhs : (b : β i hd) → IM s (s i hd b)} where tl ≟ rhs ⊢ (mk hd tl).tl ≟ rhs
+unif_hint {b : β i hd} {rhs : IM s (s i hd b)} where tl b ≟ rhs ⊢ (mk hd tl).tl b ≟ rhs
+unif_hint {b : β i (mk hd tl).hd} {rhs : IM s (s i hd b)} where tl b ≟ rhs ⊢ (mk hd tl).tl b ≟ rhs
 
 end IM
