@@ -165,7 +165,7 @@ theorem WellOrder.lt_connected (X Y : WellOrder) : X < Y ∨ X ≈ Y ∨ Y < X :
         replace ⟨hx', hx''⟩ := hx' ▸ Classical.choose_spec _
         cases hx''
         exact f_mono_rev h
-      . intro ⟨x, hx⟩ 
+      . intro ⟨x, hx⟩
         apply Subtype.eq
         dsimp
         generalize hx : Classical.choose _ = x'

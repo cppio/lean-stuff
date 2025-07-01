@@ -121,7 +121,7 @@ def IsCauchy.dist {f₁ f₂ : ℕ → α} (hf₁ : IsCauchy f₁) (hf₂ : IsCa
         . simp
         . exact hn.right
     simp [add_comm _ (ε / 2), ← add_assoc]
-  . rewrite [sub_lt_iff_lt_add] 
+  . rewrite [sub_lt_iff_lt_add]
     apply lt_of_le_of_lt
     . apply dist_triangle
       exact f₁ (N₁ ⊔ N₂)
@@ -297,7 +297,7 @@ instance : Complete (Completion α) where
         . rewrite [dist_comm]
           exact (this n).property N' (by simp [N'])
         . specialize h₂ N' (by simp [N'])
-          simp [dist, abs_lt, sub_lt_iff_lt_add] at h₂ 
+          simp [dist, abs_lt, sub_lt_iff_lt_add] at h₂
           exact h₂.right
       have : ⌈4 / ε⌉₊ ≤ N := by simp [N]
       simp at this

@@ -13,7 +13,7 @@ instance : Setoid Set where
       fun x hxv => let ⟨y, hyvw, hxy⟩ := (h₁ v vw hvw₁).left x hxv; let ⟨z, hzw, hyz⟩ := (h₂ vw w hvw₂).left y hyvw; ⟨z, hzw, y, hxy, hyz⟩,
       fun z hzw => let ⟨y, hyvw, hyz⟩ := (h₂ vw w hvw₂).right z hzw; let ⟨x, hxv, hxy⟩ := (h₁ v vw hvw₁).right y hyvw; ⟨x, hxv, y, hxy, hyz⟩
     ⟩⟩
-  
+
 instance : Membership Set Set where
   mem T S := ∃ y : T.α, T.r y T.x ∧ S ≈ { T with x := y }
 

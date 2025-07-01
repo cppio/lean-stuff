@@ -393,7 +393,7 @@ theorem isMeager_subspace {Y : Set X} {A : Set Y} (h : IsMeagre A) : IsMeagre (S
     simp
     exact h hx
 
-theorem isMeager_subspace_open {U : Set X} {A : Set U} (hU : IsOpen U) : IsMeagre A ↔ IsMeagre (Subtype.val '' A) := by 
+theorem isMeager_subspace_open {U : Set X} {A : Set U} (hU : IsOpen U) : IsMeagre A ↔ IsMeagre (Subtype.val '' A) := by
   constructor
   . exact isMeager_subspace
   . simp [isMeagre_iff_countable_union_isNowhereDense]
@@ -970,7 +970,7 @@ lemma grow (G : X → X → Prop) (G_analytic : AnalyticSet {(x, y) | G x y}) {A
     . intro ⟨z, h₁, h₂⟩
       exact ⟨⟨z, h₂⟩, (h₂ ▸ h₁ :)⟩
     . intro ⟨⟨z, h₁⟩, h₂⟩
-      exact ⟨z, h₁ ▸ h₂, h₁⟩ 
+      exact ⟨z, h₁ ▸ h₂, h₁⟩
   replace := A_analytic.measurablySeparable this
   have disjoint : Disjoint A A'' := by
     simp [Set.disjoint_iff_inter_eq_empty]
@@ -1459,7 +1459,7 @@ example {Y G} (Y_meas : BorelSet Y) : CountableBorelChromatic Y G ↔ ∃ c : Y 
     constructor
     . intro U U_meas
       suffices MeasurableSet (⋃ n ∈ U, (fun x : Y => sInf {n | x.val ∈ A n}) ⁻¹' {n}) by
-        simp at this  
+        simp at this
         exact this
       apply MeasurableSet.sUnion (Set.countable_range _)
       simp
