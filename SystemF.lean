@@ -686,7 +686,7 @@ theorem Tm.subst_subst : subst @γ₂ (subst @γ₁ e) = subst (fun x => (γ₁ 
   replace h {τ} x := congrFun (congrFun h τ) x
   induction e with
   | var x => exact h x
-  | lam e ih => exact congrArg lam (ih _ <| Var.cases rfl fun x => by simp [Rename.weaken, Subst.weaken, Var.cases, ← h x])
+  | lam e ih => exact congrArg lam (ih _ <| Var.cases rfl fun x => by simp [Subst.weaken, Var.cases, ← h x])
   | app e e₁ ih ih₁ => exact congr (congrArg app (ih _ h)) (ih₁ _ h)
   | gen e ih => exact congrArg gen (ih _ fun _ => subst_rename'' h)
   | inst e τ ih => exact congrArg (inst · τ) (ih _ h)
@@ -738,7 +738,7 @@ theorem Tm.substTp_subst {γ : Subst Δ Γ Γ'} {δ : Tp.Subst Δ Δ'} : substTp
     funext τ x
     refine x.casesMap fun x => ?_
     refine x.casesMap fun x => ?_
-    simp [Rename.map]
+    simp
     have : x.map (.subst (fun α => (δ α).rename .there)) = ((x.map (.subst δ)).map (.rename .there)).cast (by simp) (by simp) := by
       simp
     simp [this, ← heq_eq_eq]
@@ -843,8 +843,7 @@ theorem Tm.casesMap_cast
   refine .trans (b := (γ (x.map (.subst δ))).renameTp .there |>.substTp (.mk τ₂)) ?_ ?_
   . congr
     . simp
-    simp [← heq_eq_eq]
-    rfl
+    simp
   . simp
 
 inductive Tm.Steps : (e e' : Tm .nil .nil τ) → Type
