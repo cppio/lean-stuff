@@ -233,6 +233,8 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
         type := ← mkForallFVars eqArgs (.app (.app (.app (.const ``Eq [tyLvl]) ty) lhs) rhs)
         value := ← mkLambdaFVars eqArgs (.app (.app (.const ``Eq.refl [tyLvl]) ty) rhs)
       }
+      validateDefEqAttr fieldCorecName
+      defeqAttr.setTag fieldCorecName
       addSimpTheorem simpExtension fieldCorecName true false .global (eval_prio default)
       let fieldCorecHintName := fieldCorecName.str "hint"
       addDecl <| .defnDecl {
@@ -284,6 +286,8 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
         type := ← mkForallFVars eqArgs (.app (.app (.app (.const ``Eq [tyLvl]) ty) lhs) rhs)
         value := ← mkLambdaFVars eqArgs (.app (.app (.const ``Eq.refl [tyLvl]) ty) rhs)
       }
+      validateDefEqAttr fieldCtorName
+      defeqAttr.setTag fieldCtorName
       addSimpTheorem simpExtension fieldCtorName true false .global (eval_prio default)
       let fieldCtorHintName := fieldCtorName.str "hint"
       addDecl <| .defnDecl {
@@ -415,7 +419,7 @@ elab modifiers:declModifiers "coinductive " id:declId sig:declSig " where " ctor
     let type ← Term.elabType typeStx
     let ctorName ←
       if let some ctor := ctor then
-        let `(Command.structCtor| $ctorModifiers:declModifiers $ctorId ::) := ctor
+        let `(Command.structCtor| $_ctorModifiers:declModifiers $ctorId ::) := ctor
           | unreachable!
         pure (declName ++ ctorId.getId)
       else
@@ -475,11 +479,11 @@ coinductive Vec (α : Type u) : (n : Nat) → Type u where
   tl {n} (xs : Vec (n + 1)) : Vec n
 
 noncomputable
-abbrev Vec.nil {α : Type u} : Vec α .zero :=
+def Vec.nil {α : Type u} : Vec α .zero :=
   .mk .zero nofun nofun
 
 noncomputable
-abbrev Vec.cons {α : Type u} {n} (hd : α) (tl : Vec α n) : Vec α n.succ :=
+def Vec.cons {α : Type u} {n} (hd : α) (tl : Vec α n) : Vec α n.succ :=
   .mk n.succ (fun _ => hd) fun h => Nat.succ.inj h ▸ tl
 
 coinductive Collection.{u} (α : Type u) : (n : Nat) → Type u where
@@ -487,10 +491,60 @@ coinductive Collection.{u} (α : Type u) : (n : Nat) → Type u where
   peek {n} (self : Collection (n + 1)) : α
   pop {n} (self : Collection (n + 1)) : Collection n
 
+noncomputable
+def specQueue : ∀ n, Vector α n → Collection α n :=
+  .corec (Vector α) (·.insertIdx 0)  Vector.back .pop
+
+structure BatchedQueue (α : Type u) (n : Nat) where
+  n₁ : Nat
+  n₂ : Nat
+  hn : n = n₁ + n₂
+  inlist : Vector α n₁
+  outlist : Vector α n₂
+
+noncomputable
+def batchedQueue : ∀ n, BatchedQueue α n → Collection α n :=
+  .corec (BatchedQueue α) (fun s x => ⟨s.n₁ + 1, s.n₂, by have := s.hn; omega, s.inlist.push x, s.outlist⟩) (fun s => match h : s.n₂ with | 0 => (@s.inlist.head) ⟨by have := s.hn; omega⟩ | _ + 1 => (@s.outlist.back) ⟨by omega⟩) (fun s => match h : s.n₂ with | 0 => ⟨0, s.n₁ - 1, by have := s.hn; omega, #v[], s.inlist.reverse.pop⟩ | n₂ + 1 => ⟨s.n₁, n₂, by have := s.hn; omega, s.inlist, s.outlist.pop.cast (by omega)⟩)
+
+example : @specQueue α 0 #v[] = batchedQueue 0 ⟨0, 0, rfl, #v[], #v[]⟩ := by
+  apply Collection.ext fun n lhs rhs => ∃ s, rhs = batchedQueue n s ∧ lhs = specQueue n ((s.inlist.reverse ++ s.outlist).cast s.hn.symm)
+  case h => exact ⟨_, rfl, rfl⟩
+  case push =>
+    intro n _ _ ⟨s, h₁, h₂⟩ x
+    cases h₁
+    cases h₂
+    dsimp [specQueue, batchedQueue]
+    refine ⟨_, rfl, ?_⟩
+    congr
+    simp [← Vector.toArray_inj]
+  case peek =>
+    intro n _ _ ⟨s, h₁, h₂⟩
+    cases h₁
+    cases h₂
+    rcases s with ⟨n₁, n₂, hn, inlist, outlist⟩
+    dsimp [specQueue, batchedQueue]
+    simp [Vector.back]
+    split <;> cases hn <;> simp
+    rfl
+  case pop =>
+    intro n _ _ ⟨s, h₁, h₂⟩
+    cases h₁
+    cases h₂
+    dsimp [specQueue, batchedQueue]
+    refine ⟨_, rfl, ?_⟩
+    congr
+    rcases s with ⟨n₁, n₂, hn, inlist, outlist⟩
+    simp [← Vector.toArray_inj]
+    split <;> simp [Vector.eq_empty]
+
 coinductive Stack.{u} (α : Nat → Sort u) : Nat → Sort (max 1 u) where
   push {n} (xs : Stack n) (x : α n) : Stack (n + 1)
   peek {n} (xs : Stack (n + 1)) : α n
   pop {n} (xs : Stack (n + 1)) : Stack n
+
+noncomputable
+def stack (f : (i : Fin n) → α i) : Stack α n :=
+  .corec (fun n => (i : Fin n) → α i) (fun f x => Fin.lastCases x f) (· (Fin.last _)) (· ·.castSucc) n f
 
 #eval CoinductiveType.elab {
   name := `IndexTest
