@@ -420,7 +420,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
   addDecl <| .thmDecl {
     name := view.name.str "ext"
     levelParams := view.levelParams
-    type := ← withNewBinderInfos indicesBinderInfos <| mkForallFVars (params.push r ++ extMinors ++ indices) (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.forallE `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.const ``Eq [resultLevel]) (mkAppN coind indices)) (.bvar 2)) (.bvar 1)) .default) .default) .default)
+    type := ← withNewBinderInfos indicesBinderInfos <| mkForallFVars (params.push r ++ extMinors ++ indices) (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.forallE `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.const ``Eq [resultLevel]) (mkAppN coind indices)) (.bvar 2)) (.bvar 1)) .default) .implicit) .implicit)
     value := ← mkLambdaFVars (params.push r ++ extMinors ++ indices) (.lam `lhs (mkAppN coind indices) (.lam `rhs (mkAppN coind indices) (.lam `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.app (.app (.const ``Subtype.eq' [resultLevel]) α) β) (.bvar 2)) (.bvar 1)) (.app (.app (.app (.app (.app (.const ``funext [1, resultLevel]) (.const ``Nat [])) (.lam `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default)) (.proj ``Subtype 0 (.bvar 2))) (.proj ``Subtype 0 (.bvar 1))) (.lam `ℓ (.const ``Nat []) (mkAppN (.app (.app (.app (.app (.const ``Nat.rec [.zero]) (← mkLambdaFVars #[ℓ] (← mkForallFVars indices (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.forallE `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.const ``Eq [resultLevel]) (mkAppN (.app approx ℓ) indices)) (.app (.proj ``Subtype 0 (.bvar 2)) ℓ)) (.app (.proj ``Subtype 0 (.bvar 1)) ℓ)) .default) .default) .default)))) (← mkLambdaFVars indices (.lam `lhs (mkAppN coind indices) (.lam `rhs (mkAppN coind indices) (.lam `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.const ``Eq.refl [resultLevel]) (.const ``PUnit [resultLevel])) (.const ``PUnit.unit [resultLevel])) .default) .default) .default))) (← mkLambdaFVars (#[ℓ, ih] ++ indices |>.push lhs |>.push rhs |>.push h) pf)) (.bvar 0)) (indices.push (.bvar 3) |>.push (.bvar 2) |>.push (.bvar 1))) .default))) .default) .default) .default)
   }
 
@@ -485,6 +485,30 @@ coinductive Colist.{u} (α : Type u) : Type u where
 coinductive InfStream (α : Type u) : Type u where
   hd : α
   tl : InfStream α
+
+noncomputable
+def InfStream.ofFn (f : Nat → α) : InfStream α :=
+  .corec Nat f (· + 1) 0
+
+noncomputable
+def InfStream.get (s : InfStream α) : Nat → α
+  | 0 => s.hd
+  | n + 1 => s.tl.get n
+
+theorem InfStream.get_ofFn : get (ofFn f) = f := by
+  funext n
+  suffices ∀ k, get (.corec Nat f (· + 1) k) n = f (n + k) from this 0
+  intro k
+  induction n generalizing k with simp! [*]
+  | succ => grind
+
+theorem InfStream.ext' : (∀ n, get s n = get s' n) → s = s' :=
+  ext (fun lhs rhs => ∀ n, get lhs n = get rhs n) (fun _ _ h => h 0) (fun _ _ h n => h (n + 1))
+
+theorem InfStream.ofFn_get : ofFn (get s) = s := by
+  apply ext'
+  intro n
+  rw [get_ofFn]
 
 set_option linter.unusedVariables false
 
