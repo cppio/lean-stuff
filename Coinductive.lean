@@ -31,7 +31,6 @@ private partial def getUnusedLevelParam (levelParams : List Name) : Name :=
   else
     `u
 
--- TODO: change view format
 -- TODO: optimize ctor equality fields
 -- TODO: switch from subtype to structure
 -- TODO: dependent fields
@@ -47,43 +46,61 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     | throwError "invalid type"
   let levels := view.levelParams.map .param
   let viewFields ← view.fields.mapM fun field => do
-    let rec findMajorIdx idx
-      | .forallE _ d b _ =>
-        d.withApp fun fn args => do
-        if fn == .bvar idx then
-          if args.any (·.hasLooseBVar idx) then
-            throwError "invalid field {field.name}: invalid recursive occurrence"
-          return (idx, b)
-        if d.hasLooseBVar idx then
-          throwError "invalid field {field.name}: invalid recursive occurrence"
-        findMajorIdx (idx + 1) b
-      | _ => throwError "invalid field {field.name}: missing self argument"
-    let (majorIdx, ty) ← findMajorIdx 0 field.type
+    let mut fieldType := field.type
+    for param in params do
+      let .forallE _ d b _ := fieldType
+        | throwError "invalid field {field.name}: missing parameter"
+      unless d == (← param.fvarId!.getType) do
+        throwError "invalid field {field.name}: mismatched parameter"
+      fieldType := b.instantiate #[param, .bvar 0]
     let rec isRec idx
-      | .forallE _ d b _ => do
+      | e@(.forallE _ d b _) => do
         if d.hasLooseBVar idx then
           throwError "invalid field {field.name}: invalid recursive occurrence"
-        isRec (idx + 1) b
+        let (b, isRec) ← isRec (idx + 1) b
+        return (e.updateForallE! d b, isRec)
       | ty =>
         ty.withApp fun fn args => do
         if fn == .bvar idx then
-          if args.any (·.hasLooseBVar idx) then
+          if params != args[:view.numParams] then
+            throwError "invalid field {field.name}: mismatched parameter"
+          if args[view.numParams:].any (·.hasLooseBVar idx) then
             throwError "invalid field {field.name}: invalid recursive occurrence"
-          return true
+          return (mkAppN fn args[view.numParams:], true)
         if ty.hasLooseBVar idx then
           throwError "invalid field {field.name}: invalid recursive occurrence"
-        return false
-    return (majorIdx, ← isRec (majorIdx + 1) ty)
+        return (ty, false)
+    let rec findMajorIdx idx
+      | e@(.forallE _ d b _) =>
+        d.withApp fun fn args => do
+        if fn == .bvar idx then
+          if params != args[:view.numParams] then
+            throwError "invalid field {field.name}: mismatched parameter"
+          if args[view.numParams:].any (·.hasLooseBVar idx) then
+            throwError "invalid field {field.name}: invalid recursive occurrence"
+          let (b, isRec) ← isRec (idx + 1) b
+          return (e.updateForallE! (mkAppN fn args[view.numParams:]) b, idx, isRec, field.type)
+        if d.hasLooseBVar idx then
+          throwError "invalid field {field.name}: invalid recursive occurrence"
+        let (b, rest) ← findMajorIdx (idx + 1) b
+        return (e.updateForallE! d b, rest)
+      | _ => do
+        unless indices.isEmpty do
+          throwError "invalid field {field.name}: missing self argument for indexed coinductive"
+        let (b, isRec) ← isRec 0 fieldType
+        forallBoundedTelescope field.type view.numParams fun params' fieldType' =>
+        return (.forallE `self (.bvar 0) (b.instantiate1 (.bvar 1)) .default, 0, isRec, ← mkForallFVars params' (.forallE `self (mkAppN (.bvar view.numParams) params') (fieldType'.instantiate1 (.bvar (view.numParams + 1))) .default))
+    findMajorIdx 0 fieldType
   withLocalDeclD `Approx type fun approxArg => do
-  let fieldDecls ← (view.fields.zip viewFields).mapM fun (field, majorIdx, _) =>
-    forallBoundedTelescope (field.type.instantiateRev (params.push approxArg)) majorIdx fun preArgs fieldType => do
-    let eqs ← (indices.zip fieldType.bindingDomain!.getAppArgs).mapM fun (index, indexVal) => return (`h, ← mkEq index indexVal)
-    withLocalDeclsDND eqs fun eqs =>
-    return (field.name.componentsRev.head!, ← mkForallFVars (preArgs ++ eqs) fieldType.bindingBody!)
   let approxName := view.name.str "Approx"
   let patternName := approxName.str "Pattern"
   let patternCtorName := patternName.str "mk"
   let pattern := mkAppN (.const patternName levels) params
+  let fieldDecls ← (view.fields.zip viewFields).mapM fun (field, fieldType, majorIdx, _) =>
+    forallBoundedTelescope (fieldType.instantiate1 approxArg) majorIdx fun preArgs fieldType => do
+    let eqs ← (indices.zip fieldType.bindingDomain!.getAppArgs).mapM fun (index, indexVal) => return (`h, ← mkEq index indexVal)
+    withLocalDeclsDND eqs fun eqs =>
+    return (field.name.componentsRev.head!, ← mkForallFVars (preArgs ++ eqs) fieldType.bindingBody!)
   withLocalDeclsDND fieldDecls fun fields => do
     addDecl <| .inductDecl view.levelParams (view.numParams + 1 + indices.size) [{
       name := patternName
@@ -112,7 +129,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     withLocalDeclD `Agree (← mkForallFVars indices (.forallE `a (mkAppN approx₁ indices) (.forallE `a' (mkAppN approx₂ indices) (.sort .zero) .default) .default)) fun agree =>
     withLocalDeclD `a (mkAppN (.app pattern approx₁) indices) fun a =>
     withLocalDeclD `a' (mkAppN (.app pattern approx₂) indices) fun a' => do
-    let ihs ← (fieldDecls.zip viewFields).mapIdxM fun fieldIdx (⟨_, type⟩, _, isRec) =>
+    let ihs ← (fieldDecls.zip viewFields).mapIdxM fun fieldIdx (⟨_, type⟩, _, _, isRec, _) =>
       let fieldℓ := .proj patternName fieldIdx a
       let fieldℓ' := .proj patternName fieldIdx a'
       if isRec then
@@ -154,18 +171,12 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     safety := .safe
   }
   let coind := mkAppN (.const view.name levels) params
-  let paramBinderInfos ← params.mapM fun param => do
-    let param := param.fvarId!
-    let bi ← param.getBinderInfo
-    return (param, if bi.isExplicit then .implicit else bi)
-  withNewBinderInfos paramBinderInfos do
-  for (field, (majorIdx, isRec), fieldIdx) in view.fields.zip viewFields.zipIdx do
-    let type := field.type.instantiateRev (params.push coind)
+  for (field, (fieldType, majorIdx, isRec, fieldType'), fieldIdx) in view.fields.zip viewFields.zipIdx do
     addDecl <| .defnDecl {
       name := field.name
       levelParams := view.levelParams
-      type := ← mkForallFVars params type
-      value := ← mkLambdaFVars params <| ← forallTelescope type fun args body => do
+      type := fieldType'.instantiate1 (.const view.name levels)
+      value := ← mkLambdaFVars params <| ← forallTelescope (fieldType.instantiate1 coind) fun args body => do
         let major := args[majorIdx]!
         let commonArgs := args[:majorIdx].toArray ++ (← (← major.fvarId!.getType).getAppArgs[view.numParams:].toArray.mapM mkEqRefl)
         if isRec then
@@ -176,14 +187,23 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
       hints := .opaque -- TODO
       safety := .safe
     }
+  let paramBinderInfos ← params.mapM fun param => do
+    let param := param.fvarId!
+    let bi ← param.getBinderInfo
+    return (param, if bi.isExplicit then .implicit else bi)
+  let indicesBinderInfos ← indices.mapM fun index => do
+    let index := index.fvarId!
+    let bi ← index.getBinderInfo
+    return (index, if bi.isExplicit then .implicit else bi)
+  withNewBinderInfos paramBinderInfos do
   let u := getUnusedLevelParam view.levelParams
   withLocalDeclD `σ (← mkForallFVars indices (.sort (.param u))) fun σ =>
-    let minors := view.fields.map fun field => (field.name.componentsRev.head!, field.type.instantiateRev (params.push σ))
+    let minors := view.fields.zipWith (bs := viewFields) fun field (fieldType, _) => (field.name.componentsRev.head!, fieldType.instantiate1 σ)
     withLocalDeclsDND minors fun minors => do
     withLocalDeclD `corec (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)) fun corec => do
     withLocalDeclD `ih (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app (.app agree ℓ) ℓ') (indices.push (.app (mkAppN (.app (.bvar (indices.size + 7)) ℓ) indices) (.bvar 0)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 7)) ℓ') indices) (.bvar 0)))) .default)) fun ih =>
     withLocalDeclD `s (mkAppN σ indices) fun s => do
-    let fieldsVal ← (viewFields.zip <| minors.zip fieldDecls).mapM fun ⟨(majorIdx, isRec), minor, _, type⟩ =>
+    let fieldsVal ← (viewFields.zip <| minors.zip fieldDecls).mapM fun ⟨(_, majorIdx, isRec, _), minor, _, type⟩ =>
       forallTelescope type fun typeArgs typeRes => do
       let mut s := s
       let mut indexVals := indices
@@ -206,14 +226,14 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     addDecl <| .defnDecl {
       name := corecName
       levelParams := u :: view.levelParams
-      type := ← mkForallFVars (params.push σ ++ minors ++ indices) (.forallE `s (mkAppN σ indices) (mkAppN coind indices) .default)
+      type := ← withNewBinderInfos indicesBinderInfos <| mkForallFVars (params.push σ ++ minors ++ indices) (.forallE `s (mkAppN σ indices) (mkAppN coind indices) .default)
       value := ← mkLambdaFVars (params.push σ ++ minors ++ indices) (.lam `s (mkAppN σ indices) (.letE `val (← mkForallFVars (#[ℓ] ++ indices) (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)) (.app (.app (.app (.const ``Nat.rec [.max recLevel (.param u)]) (← mkLambdaFVars #[ℓ] (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)))) (← mkLambdaFVars indices (.lam `s (mkAppN σ indices) (.const ``PUnit.unit [resultLevel]) .default))) (← mkLambdaFVars (#[ℓ, corec] ++ indices |>.push s) (mkAppN (.app patternCtor (.app approx ℓ)) (indices ++ fieldsVal)))) (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) α) β) (.lam `ℓ (.const ``Nat []) (.app (mkAppN (.app (.bvar 1) (.bvar 0)) indices) (.bvar 2)) .default)) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (.lam `h (.app (.app (.const ``Nat.le []) (.bvar 1)) (.bvar 0)) (.app (mkAppN (.app (.app (.app (.app (.app (.app (.const ``Nat.le.ndrec []) (← mkLambdaFVars #[ℓ, ℓ'] (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app (.app agree ℓ) ℓ') (indices.push (.app (mkAppN (.app (.bvar (indices.size + 6)) ℓ) indices) (.bvar 0)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 6)) ℓ') indices) (.bvar 0)))) .default)))) (.lam `ℓ' (.const ``Nat []) (← mkLambdaFVars indices (.lam `s (mkAppN σ indices) (.const ``True.intro []) .default)) .default)) (← mkLambdaFVars (#[ℓ, ℓ', h, ih] ++ indices |>.push s) (mkAppN (.app (.app (.app agreePatternCtor (.app approx ℓ)) (.app approx ℓ')) (.app (.app agree ℓ) ℓ')) ((indices.push (mkAppN (.app (.bvar (indices.size + 8)) (.app (.const ``Nat.succ []) ℓ)) (indices |>.push (.bvar 0))) |>.push (mkAppN (.app (.bvar (indices.size + 8)) (.app (.const ``Nat.succ []) ℓ')) (indices |>.push (.bvar 0)))) ++ fieldsProperty)))) (.bvar 2)) (.bvar 1)) (.bvar 0)) indices) (.bvar 4)) .default) .implicit) .implicit)) false) .default)
       hints := .opaque -- TODO
       safety := .safe
     }
     let corec := mkAppN (.const corecName (.param u :: levels)) (params.push σ ++ minors)
-    for (field, minor, majorIdx, isRec) in view.fields.zip <| minors.zip viewFields do
-      forallTelescope (field.type.instantiateRev (params.push coind)) fun args body => do
+    for (field, minor, fieldType, majorIdx, isRec, _) in view.fields.zip <| minors.zip viewFields do
+      forallTelescope (fieldType.instantiate1 coind) fun args body => do
       let indexVals := (← args[majorIdx]!.fvarId!.getType).getAppArgs[view.numParams:].toArray
       withLocalDeclD `s (mkAppN σ indexVals) fun s => do
       let corecApp := mkAppN corec (indexVals.push s)
@@ -248,18 +268,19 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
       --addUnificationHint fieldCorecHintName .global
     setIrreducibleAttribute corecName
   withLocalDeclsDND (fieldDecls.map fun (n, e) => (n, e.replaceFVar approxArg coind)) fun fields => do
-    let fieldsVal ← (fields.zip <| viewFields.zip fieldDecls).mapM fun (field, (_, isRec), _, type) =>
+    let fieldsVal ← (fields.zip <| viewFields.zip fieldDecls).mapM fun (field, (_, _, isRec, _), _, type) =>
       if isRec then
         forallTelescope type fun typeArgs _ =>
         mkLambdaFVars typeArgs (.app (.proj ``Subtype 0 (mkAppN field typeArgs)) ℓ)
       else
         return field
-    let fieldsProperty ← (fields.zip <| viewFields.zip fieldDecls).mapM fun (field, (_, isRec), _, type) =>
+    let fieldsProperty ← (fields.zip <| viewFields.zip fieldDecls).mapM fun (field, (_, _, isRec, _), _, type) =>
       if isRec then
         forallTelescope type fun typeArgs _ =>
         mkLambdaFVars typeArgs (.app (.app (.app (.proj ``Subtype 1 (mkAppN field typeArgs)) ℓ) ℓ') h)
       else
         mkEqRefl field
+    withNewBinderInfos indicesBinderInfos do
     addDecl <| .defnDecl {
       name := view.ctorName
       levelParams := view.levelParams
@@ -270,8 +291,8 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
       safety := .safe
     }
     let ctor := mkAppN (.const view.ctorName levels) params
-    for (field, (majorIdx, _), fieldIdx) in view.fields.zip viewFields.zipIdx do
-      forallBoundedTelescope (field.type.instantiateRev (params.push coind)) majorIdx fun args body =>
+    for (field, (fieldType, majorIdx, _), fieldIdx) in view.fields.zip viewFields.zipIdx do
+      forallBoundedTelescope (fieldType.instantiate1 coind) majorIdx fun args body =>
       let indexVals := body.bindingDomain!.getAppArgs[view.numParams:].toArray
       withLocalDeclsDND (fieldDecls.map fun (n, e) => (n, e.replaceFVars (indices.push approxArg) (indexVals.push coind))) fun fields => do
       let eqArgs := params ++ args ++ fields
@@ -303,8 +324,8 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     setIrreducibleAttribute view.ctorName
   setIrreducibleAttribute view.name
   withLocalDeclD `r (← mkForallFVars indices (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.sort .zero) .default) .default)) fun r => do
-  let extMinors ← (view.fields.zip viewFields).mapM fun (field, majorIdx, isRec) =>
-    forallBoundedTelescope (field.type.instantiateRev (params.push approxArg)) majorIdx fun fieldArgs fieldBody =>
+  let extMinors ← (view.fields.zip viewFields).mapM fun (field, fieldType, majorIdx, isRec, _) =>
+    forallBoundedTelescope (fieldType.instantiate1 approxArg) majorIdx fun fieldArgs fieldBody =>
     let indexVals := fieldBody.bindingDomain!.getAppArgs
     withLocalDeclD `lhs (mkAppN coind indexVals) fun lhs =>
     withLocalDeclD `rhs (mkAppN coind indexVals) fun rhs =>
@@ -326,7 +347,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
   let mut rhsCtor := lhsCtor
   let mut ctorType ← withLocalDeclsDND (fieldDecls.map fun (n, e) => (n, e.replaceFVar approxArg (.app approx ℓ))) fun fields => mkForallFVars fields (mkAppN (.app pattern (.app approx ℓ)) indices)
   let mut pf : Expr := .app (.app (.const ``Eq.refl [resultLevel]) ctorType) lhsCtor
-  for ((_, fieldType), field, (majorIdx, isRec), fieldIdx) in fieldDecls.zip <| view.fields.zip viewFields.zipIdx do
+  for ((_, fieldType), field, (_, majorIdx, isRec, _), fieldIdx) in fieldDecls.zip <| view.fields.zip viewFields.zipIdx do
     let fieldType := fieldType.replaceFVar approxArg (.app approx ℓ)
     let fieldTypeLevel ← getLevel fieldType
     let lhsField := .proj patternName fieldIdx lhs'
@@ -399,7 +420,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
   addDecl <| .thmDecl {
     name := view.name.str "ext"
     levelParams := view.levelParams
-    type := ← mkForallFVars (params.push r ++ extMinors ++ indices) (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.forallE `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.const ``Eq [resultLevel]) (mkAppN coind indices)) (.bvar 2)) (.bvar 1)) .default) .default) .default)
+    type := ← withNewBinderInfos indicesBinderInfos <| mkForallFVars (params.push r ++ extMinors ++ indices) (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.forallE `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.const ``Eq [resultLevel]) (mkAppN coind indices)) (.bvar 2)) (.bvar 1)) .default) .default) .default)
     value := ← mkLambdaFVars (params.push r ++ extMinors ++ indices) (.lam `lhs (mkAppN coind indices) (.lam `rhs (mkAppN coind indices) (.lam `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.app (.app (.const ``Subtype.eq' [resultLevel]) α) β) (.bvar 2)) (.bvar 1)) (.app (.app (.app (.app (.app (.const ``funext [1, resultLevel]) (.const ``Nat [])) (.lam `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default)) (.proj ``Subtype 0 (.bvar 2))) (.proj ``Subtype 0 (.bvar 1))) (.lam `ℓ (.const ``Nat []) (mkAppN (.app (.app (.app (.app (.const ``Nat.rec [.zero]) (← mkLambdaFVars #[ℓ] (← mkForallFVars indices (.forallE `lhs (mkAppN coind indices) (.forallE `rhs (mkAppN coind indices) (.forallE `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.app (.const ``Eq [resultLevel]) (mkAppN (.app approx ℓ) indices)) (.app (.proj ``Subtype 0 (.bvar 2)) ℓ)) (.app (.proj ``Subtype 0 (.bvar 1)) ℓ)) .default) .default) .default)))) (← mkLambdaFVars indices (.lam `lhs (mkAppN coind indices) (.lam `rhs (mkAppN coind indices) (.lam `h (mkAppN r (indices.push (.bvar 1) |>.push (.bvar 0))) (.app (.app (.const ``Eq.refl [resultLevel]) (.const ``PUnit [resultLevel])) (.const ``PUnit.unit [resultLevel])) .default) .default) .default))) (← mkLambdaFVars (#[ℓ, ih] ++ indices |>.push lhs |>.push rhs |>.push h) pf)) (.bvar 0)) (indices.push (.bvar 3) |>.push (.bvar 2) |>.push (.bvar 1))) .default))) .default) .default) .default)
   }
 
@@ -409,7 +430,6 @@ def coinductiveFields := leading_parser
   manyIndent <| ppLine >> checkColGe >> ppGroup (atomic (Command.declModifiers true >> ident) >> Command.declSig)
 
 -- TODO: redo this
--- TODO: auto insert self if no indices
 elab modifiers:declModifiers "coinductive " id:declId sig:declSig " where " ctor:(Command.structCtor)? fields:coinductiveFields : command => do
   let modifiers ← elabModifiers modifiers
   let ⟨name, declName, levelNames⟩ ← Command.liftTermElabM <| Term.expandDeclId (← getCurrNamespace) (← Command.getLevelNames) id modifiers
@@ -426,19 +446,25 @@ elab modifiers:declModifiers "coinductive " id:declId sig:declSig " where " ctor
         pure (declName.str "mk")
     let `(coinductiveFields| $[$fieldModifiers:declModifiers $fieldIds $fieldSigs]*) := fields
       | unreachable!
+    let type ← mkForallFVars params type
     let fields ← withAuxDecl name type declName fun aux => (fieldIds.zip fieldSigs).mapM fun (fieldId, fieldSig) =>
       let (binders, typeStx) := expandDeclSig fieldSig
       Term.elabBinders binders.getArgs fun args => do
       let type ← Term.elabType typeStx
       Term.synthesizeSyntheticMVarsNoPostponing
+      let paramBinderInfos ← params.mapM fun param => do
+        let param := param.fvarId!
+        let bi ← param.getBinderInfo
+        return (param, if bi.isExplicit then .implicit else bi)
+      withNewBinderInfos paramBinderInfos do
       return {
         name := declName ++ fieldId.getId
-        type := ← instantiateMVars <| ← eraseRecAppSyntaxExpr <| (← mkForallFVars args type).abstract (params.push aux)
+        type := ← instantiateMVars <| ← eraseRecAppSyntaxExpr <| ((← mkForallFVars (params ++ args) type).abstract #[aux])
       }
     return {
       name := declName
       levelParams := levelNames
-      type := ← mkForallFVars params type
+      type := ← instantiateMVars type
       numParams := params.size
       ctorName
       fields
@@ -455,45 +481,33 @@ coinductive Colist.{u} (α : Type u) : Type u where
   head : Option α
   tail : head.isSome → Colist α
 -/
-/-
-#eval CoinductiveType.elab {
-  name := `Colist
-  levelParams := `u
-  type := .forallE `α (.sort (.succ (.param `u))) (.sort (.succ (.param `u))) .default
-  numParams := 1
-  ctorName := `Colist.mk
-  fields := #[{
-    name := `Colist.head
-    type := .forallE `self (.bvar 0) (.app (.const ``Option [.param `u]) (.bvar 2)) .default
-  }, {
-    name := `Colist.tail
-    type := .forallE `self (.bvar 0) (.forallE `h (.app (.app (.app (.const ``Eq [.succ .zero]) (.const ``Bool []) (.app (.app (.const ``Option.isSome [.param `u]) (.bvar 2)) )) (.const ``true []))) (.bvar 2) .default) .default
-  }]
-}
--/
+
+coinductive InfStream (α : Type u) : Type u where
+  hd : α
+  tl : InfStream α
 
 set_option linter.unusedVariables false
 
 coinductive Vec (α : Type u) : (n : Nat) → Type u where
-  hd {n} (xs : Vec (n + 1)) : α
-  tl {n} (xs : Vec (n + 1)) : Vec n
+  hd {n} (xs : Vec α (n + 1)) : α
+  tl {n} (xs : Vec α (n + 1)) : Vec α n
 
 noncomputable
 def Vec.nil {α : Type u} : Vec α .zero :=
-  .mk .zero nofun nofun
+  .mk nofun nofun
 
 noncomputable
 def Vec.cons {α : Type u} {n} (hd : α) (tl : Vec α n) : Vec α n.succ :=
-  .mk n.succ (fun _ => hd) fun h => Nat.succ.inj h ▸ tl
+  .mk (fun _ => hd) fun h => Nat.succ.inj h ▸ tl
 
 coinductive Collection.{u} (α : Type u) : (n : Nat) → Type u where
-  push {n} (self : Collection n) (x : α) : Collection (n + 1)
-  peek {n} (self : Collection (n + 1)) : α
-  pop {n} (self : Collection (n + 1)) : Collection n
+  push {n} (self : Collection α n) (x : α) : Collection α (n + 1)
+  peek {n} (self : Collection α (n + 1)) : α
+  pop {n} (self : Collection α (n + 1)) : Collection α n
 
 noncomputable
-def specQueue : ∀ n, Vector α n → Collection α n :=
-  .corec (Vector α) (·.insertIdx 0)  Vector.back .pop
+def specQueue : Vector α n → Collection α n :=
+  .corec (Vector α) (·.insertIdx 0) Vector.back .pop
 
 structure BatchedQueue (α : Type u) (n : Nat) where
   n₁ : Nat
@@ -503,11 +517,11 @@ structure BatchedQueue (α : Type u) (n : Nat) where
   outlist : Vector α n₂
 
 noncomputable
-def batchedQueue : ∀ n, BatchedQueue α n → Collection α n :=
+def batchedQueue : BatchedQueue α n → Collection α n :=
   .corec (BatchedQueue α) (fun s x => ⟨s.n₁ + 1, s.n₂, by have := s.hn; omega, s.inlist.push x, s.outlist⟩) (fun s => match h : s.n₂ with | 0 => (@s.inlist.head) ⟨by have := s.hn; omega⟩ | _ + 1 => (@s.outlist.back) ⟨by omega⟩) (fun s => match h : s.n₂ with | 0 => ⟨0, s.n₁ - 1, by have := s.hn; omega, #v[], s.inlist.reverse.pop⟩ | n₂ + 1 => ⟨s.n₁, n₂, by have := s.hn; omega, s.inlist, s.outlist.pop.cast (by omega)⟩)
 
-example : @specQueue α 0 #v[] = batchedQueue 0 ⟨0, 0, rfl, #v[], #v[]⟩ := by
-  apply Collection.ext fun n lhs rhs => ∃ s, rhs = batchedQueue n s ∧ lhs = specQueue n ((s.inlist.reverse ++ s.outlist).cast s.hn.symm)
+example : @specQueue α 0 #v[] = batchedQueue ⟨0, 0, rfl, #v[], #v[]⟩ := by
+  apply Collection.ext fun _ lhs rhs => ∃ s, rhs = batchedQueue s ∧ lhs = specQueue ((s.inlist.reverse ++ s.outlist).cast s.hn.symm)
   case h => exact ⟨_, rfl, rfl⟩
   case push =>
     intro n _ _ ⟨s, h₁, h₂⟩ x
@@ -538,77 +552,35 @@ example : @specQueue α 0 #v[] = batchedQueue 0 ⟨0, 0, rfl, #v[], #v[]⟩ := b
     split <;> simp [Vector.eq_empty]
 
 coinductive Stack.{u} (α : Nat → Sort u) : Nat → Sort (max 1 u) where
-  push {n} (xs : Stack n) (x : α n) : Stack (n + 1)
-  peek {n} (xs : Stack (n + 1)) : α n
-  pop {n} (xs : Stack (n + 1)) : Stack n
+  push {n} (xs : Stack α n) (x : α n) : Stack α (n + 1)
+  peek {n} (xs : Stack α (n + 1)) : α n
+  pop {n} (xs : Stack α (n + 1)) : Stack α n
 
 noncomputable
 def stack (f : (i : Fin n) → α i) : Stack α n :=
-  .corec (fun n => (i : Fin n) → α i) (fun f x => Fin.lastCases x f) (· (Fin.last _)) (· ·.castSucc) n f
+  .corec (fun n => (i : Fin n) → α i) (fun f x => Fin.lastCases x f) (· (Fin.last _)) (· ·.castSucc) f
 
-#eval CoinductiveType.elab {
-  name := `IndexTest
-  levelParams := []
-  type := .app (.const ``Id [.succ .zero]) (.forallE `n (.const ``Nat []) (.app (.const ``Id [.succ .zero]) (.forallE `m (.const ``Nat []) (.app (.const ``Id [.succ .zero]) (.sort (.succ .zero))) .default)) .default)
-  numParams := 0
-  ctorName := `IndexTest.mk
-  fields := #[{
-    name := `IndexTest.get
-    type := .forallE `m (.const ``Nat []) (.forallE `n (.const ``Nat []) (.forallE `self (.app (.app (.bvar 2) (.app (.const ``Nat.succ []) (.bvar 0))) (.bvar 1)) (.forallE `k (.const ``Nat []) (.app (.app (.bvar 4) (.bvar 2)) (.app (.const ``Nat.succ []) (.bvar 3))) .default) .default) .default) .default
-  }]
-}
+coinductive IndexTest : Id (Nat → Id (Nat → Id Type)) where
+  get (m n : Nat) (self : IndexTest n.succ m) (k : Nat) : IndexTest n m.succ
 
 def NatUnOp := Nat → Nat
 
-#eval CoinductiveType.elab {
-  name := `SimpleTest
-  levelParams := []
-  type := .forallE `n (.const ``Nat []) (.sort (.succ .zero)) .default
-  numParams := 0
-  ctorName := `SimpleTest.mk
-  fields := #[{
-    name := `SimpleTest.get
-    type := .forallE `n (.const ``Nat []) (.forallE `self (.app (.bvar 1) (.bvar 0)) (.const ``NatUnOp []) .default) .default
-  }]
-}
+coinductive SimpleTest : Nat → Type where
+  get (n : Nat) (self : SimpleTest n) : NatUnOp
 
 coinductive LazyProd.{u, v} (α : Type u) (β : Type v) : Type (max u v) where
-  fst (self : LazyProd) : α
-  snd (self : LazyProd) : β
+  fst : α
+  snd : β
 
 coinductive DependentTest : (n : Nat) → Type where
   out n m (self : DependentTest (.add n m)) k : Fin (n.add k)
   inner n m (self : DependentTest (.add n m)) k : DependentTest (n.add k)
 
-#eval CoinductiveType.elab {
-  name := `UnivTest
-  levelParams := []
-  type := .forallE `α (.sort 3) (.sort 1) .default
-  numParams := 0
-  ctorName := `UnivTest.mk
-  fields := #[{
-    name := `UnivTest.get
-    type := .forallE `self (.app (.bvar 0) (.sort 2)) (.const ``Unit []) .default
-  }]
-}
+coinductive UnivTest : Type 1 → Type where
+  get (self : UnivTest Type) : Unit
 
-#eval CoinductiveType.elab {
-  name := `UnivTest'
-  levelParams := []
-  type := .forallE `α (.sort 1) (.sort 3) .default
-  numParams := 0
-  ctorName := `UnivTest'.mk
-  fields := #[]
-}
+coinductive UnivTest' : Type → Type 1 where
+  get {α : Type} (self : UnivTest' α) : α
 
-#eval CoinductiveType.elab {
-  name := `UnivTest2
-  levelParams := [`u]
-  type := .forallE `α (.sort (.param `u)) (.forallE `x (.bvar 0) (.sort 1) .default) .default
-  numParams := 1
-  ctorName := `UnivTest2.mk
-  fields := #[{
-    name := `UnivTest2.get
-    type := .forallE `x (.bvar 1) (.forallE `self (.app (.bvar 1) (.bvar 0)) (.const ``True []) .default) .default
-  }]
-}
+coinductive UnivTest2 (α : Sort u) : α → Type where
+  get (x : α) (self : UnivTest2 α x) : True
