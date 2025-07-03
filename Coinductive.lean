@@ -2,11 +2,6 @@ import Lean
 
 open Lean Meta
 
-@[elab_as_elim]
-private theorem Nat.le.ndrec {motive : (n m : Nat) → Prop} (zero_le : ∀ m, motive .zero m) (succ_le_succ : ∀ {n m}, n.le m → motive n m → motive n.succ m.succ) : ∀ {n m}, n.le m → motive n m
-  | .zero, m, _ => zero_le m
-  | .succ _, .succ _, h => succ_le_succ (Nat.le_of_succ_le_succ h) (ndrec @zero_le @succ_le_succ (Nat.le_of_succ_le_succ h))
-
 private theorem Subtype.eq' : {lhs rhs : Subtype p} → lhs.val = rhs.val → lhs = rhs
   | ⟨_, _⟩, ⟨_, _⟩, rfl => rfl
 
@@ -147,21 +142,20 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
       }]
     }] false
   let agreePatternCtor := mkAppN (.const agreePatternCtorName levels) params
-  withLocalDecl `ℓ .implicit (.const ``Nat []) fun ℓ =>
-  withLocalDecl `ℓ' .implicit (.const ``Nat []) fun ℓ' =>
-  withLocalDeclD `h (.app (.app (.const ``Nat.le []) ℓ) ℓ') fun h => do
+  withLocalDecl `ℓ .default (.const ``Nat []) fun ℓ =>
+  withLocalDecl `ℓ' .default (.const ``Nat []) fun ℓ' => do
   let recLevel := (← inferType (← mkForallFVars indices (mkAppN (.app approx ℓ) indices))).sortLevel!
   addDecl <| .defnDecl {
     name := agreeName
     levelParams := view.levelParams
     type := ← mkForallFVars ((params.push ℓ |>.push ℓ') ++ indices) (.forallE `a (mkAppN (.app approx ℓ) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)
-    value := ← mkLambdaFVars params (.app (.app (.app (.const ``Nat.rec [recLevel]) (← mkLambdaFVars #[ℓ] (← mkForallFVars (#[ℓ'] ++ indices) (.forallE `a (mkAppN (.app approx ℓ) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)))) (← mkLambdaFVars (#[ℓ'] ++ indices) (.lam `a (mkAppN (.app approx (.const ``Nat.zero [])) indices) (.lam `a' (mkAppN (.app approx ℓ') indices) (.const ``True []) .default) .default))) (← mkLambdaFVars #[ℓ] (.lam `Agree (← mkForallFVars (#[ℓ'] ++ indices) (.forallE `a (mkAppN (.app approx ℓ) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)) (.app (.app (.app (.const ``Nat.rec [recLevel]) (← mkLambdaFVars #[ℓ'] (← mkForallFVars indices (.forallE `a (mkAppN (.app approx (.app (.const ``Nat.succ []) ℓ)) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)))) (← mkLambdaFVars indices (.lam `a (mkAppN (.app approx (.app (.const ``Nat.succ []) ℓ)) indices) (.lam `a' (mkAppN (.app approx (.const ``Nat.zero [])) indices) (.const ``False []) .default) .default))) (← mkLambdaFVars #[ℓ'] (.lam `Agree (← mkForallFVars indices (.forallE `a (mkAppN (.app approx (.app (.const ``Nat.succ []) ℓ)) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)) (.app (.app (.app agreePattern (.app approx ℓ)) (.app approx ℓ')) (.app (.bvar 2) ℓ')) .default))) .default)))
+    value := ← mkLambdaFVars params (.app (.app (.app (.const ``Nat.rec [recLevel]) (← mkLambdaFVars #[ℓ] (← mkForallFVars (#[ℓ'] ++ indices) (.forallE `a (mkAppN (.app approx ℓ) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)))) (← mkLambdaFVars (#[ℓ'] ++ indices) (.lam `a (mkAppN (.app approx (.const ``Nat.zero [])) indices) (.lam `a' (mkAppN (.app approx ℓ') indices) (.const ``True []) .default) .default))) (← mkLambdaFVars #[ℓ] (.lam `Agree (← mkForallFVars (#[ℓ'] ++ indices) (.forallE `a (mkAppN (.app approx ℓ) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)) (.app (.app (.app (.const ``Nat.rec [recLevel]) (← mkLambdaFVars #[ℓ'] (← mkForallFVars indices (.forallE `a (mkAppN (.app approx (.app (.const ``Nat.succ []) ℓ)) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)))) (← mkLambdaFVars indices (.lam `a (mkAppN (.app approx (.app (.const ``Nat.succ []) ℓ)) indices) (.lam `a' (mkAppN (.app approx (.const ``Nat.zero [])) indices) (.const ``True []) .default) .default))) (← mkLambdaFVars #[ℓ'] (.lam `Agree (← mkForallFVars indices (.forallE `a (mkAppN (.app approx (.app (.const ``Nat.succ []) ℓ)) indices) (.forallE `a' (mkAppN (.app approx ℓ') indices) (.sort .zero) .default) .default)) (.app (.app (.app agreePattern (.app approx ℓ)) (.app approx ℓ')) (.app (.bvar 2) ℓ')) .default))) .default)))
     hints := .opaque -- TODO
     safety := .safe
   }
   let agree := mkAppN (.const agreeName levels) params
   let α := .forallE `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default
-  let β := .lam `f α (.forallE `ℓ (.const ``Nat []) (.forallE `ℓ' (.const ``Nat []) (.forallE `h (.app (.app (.const ``Nat.le []) (.bvar 1)) (.bvar 0)) (mkAppN (.app (.app agree (.bvar 2)) (.bvar 1)) (indices.push (.app (.bvar 3) (.bvar 2)) |>.push (.app (.bvar 3) (.bvar 1)))) .default) .implicit) .implicit) .default
+  let β := .lam `f α (.forallE `ℓ (.const ``Nat []) (.forallE `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree (.bvar 1)) (.bvar 0)) (indices.push (.app (.bvar 2) (.bvar 1)) |>.push (.app (.bvar 2) (.bvar 0)))) .implicit) .implicit) .default
   addDecl <| .defnDecl {
     name := view.name
     levelParams := view.levelParams
@@ -181,7 +175,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
         let commonArgs := args[:majorIdx].toArray ++ (← (← major.fvarId!.getType).getAppArgs[view.numParams:].toArray.mapM mkEqRefl)
         if isRec then
           let indexValues := body.getAppArgs[view.numParams:]
-          mkLambdaFVars args (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) (α.replaceFVars indices indexValues)) (β.replaceFVars indices indexValues)) (.lam `ℓ (.const ``Nat []) (mkAppN (.proj patternName fieldIdx (.app (.proj ``Subtype 0 args[majorIdx]!) (.app (.const ``Nat.succ []) (.bvar 0)))) (commonArgs ++ args[majorIdx + 1:].toArray)) .default)) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (.lam `h (.app (.app (.const ``Nat.le []) (.bvar 1)) (.bvar 0)) (mkAppN (.proj agreePatternName fieldIdx (.app (.app (.app (.proj ``Subtype 1 args[majorIdx]!) (.app (.const ``Nat.succ []) (.bvar 2))) (.app (.const ``Nat.succ []) (.bvar 1))) (.app (.app (.app (.const ``Nat.succ_le_succ []) (.bvar 2)) (.bvar 1)) (.bvar 0)))) (commonArgs ++ args[majorIdx + 1:].toArray)) .default) .implicit) .implicit))
+          mkLambdaFVars args (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) (α.replaceFVars indices indexValues)) (β.replaceFVars indices indexValues)) (.lam `ℓ (.const ``Nat []) (mkAppN (.proj patternName fieldIdx (.app (.proj ``Subtype 0 args[majorIdx]!) (.app (.const ``Nat.succ []) (.bvar 0)))) (commonArgs ++ args[majorIdx + 1:].toArray)) .default)) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (mkAppN (.proj agreePatternName fieldIdx (.app (.app (.proj ``Subtype 1 args[majorIdx]!) (.app (.const ``Nat.succ []) (.bvar 1))) (.app (.const ``Nat.succ []) (.bvar 0)))) (commonArgs ++ args[majorIdx + 1:].toArray)) .implicit) .implicit))
         else
           mkLambdaFVars args[:majorIdx + 1] (mkAppN (.proj patternName fieldIdx (.app (.proj ``Subtype 0 major) (.app (.const ``Nat.succ []) (.const ``Nat.zero [])))) commonArgs)
       hints := .opaque -- TODO
@@ -201,7 +195,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     let minors := view.fields.zipWith (bs := viewFields) fun field (fieldType, _) => (field.name.componentsRev.head!, fieldType.instantiate1 σ)
     withLocalDeclsDND minors fun minors => do
     withLocalDeclD `corec (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)) fun corec => do
-    withLocalDeclD `ih (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app (.app agree ℓ) ℓ') (indices.push (.app (mkAppN (.app (.bvar (indices.size + 7)) ℓ) indices) (.bvar 0)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 7)) ℓ') indices) (.bvar 0)))) .default)) fun ih =>
+    withLocalDeclD `ih (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (.forallE `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree ℓ) (.bvar 0)) (indices.push (.app (mkAppN (.app (.bvar (indices.size + 4)) ℓ) indices) (.bvar 1)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 4)) (.bvar 0)) indices) (.bvar 1)))) .default) .default)) fun ih =>
     withLocalDeclD `s (mkAppN σ indices) fun s => do
     let fieldsVal ← (viewFields.zip <| minors.zip fieldDecls).mapM fun ⟨(_, majorIdx, isRec, _), minor, _, type⟩ =>
       forallTelescope type fun typeArgs typeRes => do
@@ -216,18 +210,18 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
         mkLambdaFVars typeArgs (.app (mkAppN corec typeRes.getAppArgs) (mkAppN minor (typeArgs[:majorIdx].toArray.push s ++ typeArgs[majorIdx + indices.size:])))
       else
         mkLambdaFVars typeArgs[:majorIdx + indices.size] (mkAppN minor (typeArgs[:majorIdx].toArray.push s))
-    let fieldsProperty ← fieldsVal.mapM fun type =>
-      let type' := type.replaceFVar corec ih
-      if type'.equal type then
-        mkEqRefl type
+    let fieldsProperty ← (viewFields.zip fieldsVal).mapM fun ((_, _, isRec, _), type) =>
+      if isRec then
+        lambdaTelescope type fun typeArgs type =>
+        mkLambdaFVars typeArgs (.app (type.updateFn ih) ℓ')
       else
-        return type'
+        mkEqRefl type
     let corecName := view.name.str "corec"
     addDecl <| .defnDecl {
       name := corecName
       levelParams := u :: view.levelParams
       type := ← withNewBinderInfos indicesBinderInfos <| mkForallFVars (params.push σ ++ minors ++ indices) (.forallE `s (mkAppN σ indices) (mkAppN coind indices) .default)
-      value := ← mkLambdaFVars (params.push σ ++ minors ++ indices) (.lam `s (mkAppN σ indices) (.letE `val (← mkForallFVars (#[ℓ] ++ indices) (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)) (.app (.app (.app (.const ``Nat.rec [.max recLevel (.param u)]) (← mkLambdaFVars #[ℓ] (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)))) (← mkLambdaFVars indices (.lam `s (mkAppN σ indices) (.const ``PUnit.unit [resultLevel]) .default))) (← mkLambdaFVars (#[ℓ, corec] ++ indices |>.push s) (mkAppN (.app patternCtor (.app approx ℓ)) (indices ++ fieldsVal)))) (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) α) β) (.lam `ℓ (.const ``Nat []) (.app (mkAppN (.app (.bvar 1) (.bvar 0)) indices) (.bvar 2)) .default)) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (.lam `h (.app (.app (.const ``Nat.le []) (.bvar 1)) (.bvar 0)) (.app (mkAppN (.app (.app (.app (.app (.app (.app (.const ``Nat.le.ndrec []) (← mkLambdaFVars #[ℓ, ℓ'] (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app (.app agree ℓ) ℓ') (indices.push (.app (mkAppN (.app (.bvar (indices.size + 6)) ℓ) indices) (.bvar 0)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 6)) ℓ') indices) (.bvar 0)))) .default)))) (.lam `ℓ' (.const ``Nat []) (← mkLambdaFVars indices (.lam `s (mkAppN σ indices) (.const ``True.intro []) .default)) .default)) (← mkLambdaFVars (#[ℓ, ℓ', h, ih] ++ indices |>.push s) (mkAppN (.app (.app (.app agreePatternCtor (.app approx ℓ)) (.app approx ℓ')) (.app (.app agree ℓ) ℓ')) ((indices.push (mkAppN (.app (.bvar (indices.size + 8)) (.app (.const ``Nat.succ []) ℓ)) (indices |>.push (.bvar 0))) |>.push (mkAppN (.app (.bvar (indices.size + 8)) (.app (.const ``Nat.succ []) ℓ')) (indices |>.push (.bvar 0)))) ++ fieldsProperty)))) (.bvar 2)) (.bvar 1)) (.bvar 0)) indices) (.bvar 4)) .default) .implicit) .implicit)) false) .default)
+      value := ← mkLambdaFVars (params.push σ ++ minors ++ indices) (.lam `s (mkAppN σ indices) (.letE `val (← mkForallFVars (#[ℓ] ++ indices) (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)) (.app (.app (.app (.const ``Nat.rec [.max recLevel (.param u)]) (← mkLambdaFVars #[ℓ] (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (mkAppN (.app approx ℓ) indices) .default)))) (← mkLambdaFVars indices (.lam `s (mkAppN σ indices) (.const ``PUnit.unit [resultLevel]) .default))) (← mkLambdaFVars (#[ℓ, corec] ++ indices |>.push s) (mkAppN (.app patternCtor (.app approx ℓ)) (indices ++ fieldsVal)))) (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) α) β) (.lam `ℓ (.const ``Nat []) (.app (mkAppN (.app (.bvar 1) (.bvar 0)) indices) (.bvar 2)) .default)) (.lam `ℓ (.const ``Nat []) (mkAppN (.app (.app (.app (.app (.const ``Nat.rec [.zero]) (← mkLambdaFVars #[ℓ] (← mkForallFVars indices (.forallE `s (mkAppN σ indices) (.forallE `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree ℓ) (.bvar 0)) (indices.push (.app (mkAppN (.app (.bvar (indices.size + 4)) ℓ) indices) (.bvar 1)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 4)) (.bvar 0)) indices) (.bvar 1)))) .default) .default)))) (← mkLambdaFVars indices (.lam `s (mkAppN σ indices) (.lam `ℓ' (.const ``Nat []) (.const ``True.intro []) .default) .default))) (← mkLambdaFVars (#[ℓ, ih] ++ indices |>.push s) (.lam `ℓ' (.const ``Nat []) (.app (.app (.app (.app (.const ``Nat.casesOn [.zero]) (.lam `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree (.app (.const ``Nat.succ []) ℓ)) (.bvar 0)) (indices.push (.app (mkAppN (.app (.bvar (indices.size + 6)) (.app (.const ``Nat.succ []) ℓ)) indices) (.bvar 2)) |>.push (.app (mkAppN (.app (.bvar (indices.size + 6)) (.bvar 0)) indices) (.bvar 2)))) .default)) (.bvar 0)) (.const ``True.intro [])) (← mkLambdaFVars #[ℓ'] (mkAppN (.app (.app (.app agreePatternCtor (.app approx ℓ)) (.app approx ℓ')) (.app (.app agree ℓ) ℓ')) ((indices.push (mkAppN (.app (.bvar (indices.size + 6)) (.app (.const ``Nat.succ []) ℓ)) (indices |>.push s)) |>.push (mkAppN (.app (.bvar (indices.size + 6)) (.app (.const ``Nat.succ []) ℓ')) (indices |>.push s))) ++ fieldsProperty)))) .default))) (.bvar 0)) (indices.push (.bvar 2))) .default)) false) .default)
       hints := .opaque -- TODO
       safety := .safe
     }
@@ -277,7 +271,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
     let fieldsProperty ← (fields.zip <| viewFields.zip fieldDecls).mapM fun (field, (_, _, isRec, _), _, type) =>
       if isRec then
         forallTelescope type fun typeArgs _ =>
-        mkLambdaFVars typeArgs (.app (.app (.app (.proj ``Subtype 1 (mkAppN field typeArgs)) ℓ) ℓ') h)
+        mkLambdaFVars typeArgs (.app (.app (.proj ``Subtype 1 (mkAppN field typeArgs)) ℓ) ℓ')
       else
         mkEqRefl field
     withNewBinderInfos indicesBinderInfos do
@@ -285,8 +279,7 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
       name := view.ctorName
       levelParams := view.levelParams
       type := ← mkForallFVars (params ++ indices ++ fields) (mkAppN coind indices)
-      --value := ← mkLambdaFVars (params ++ indices ++ fields) (.letE `val (.forallE `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default) (.app (.app (.app (.const ``Nat.rec [resultLevel]) (.lam `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default)) (.const ``PUnit.unit [resultLevel])) (← mkLambdaFVars #[ℓ] (.lam `mk (mkAppN (.app approx ℓ) indices) (mkAppN (.app patternCtor (.app approx ℓ)) (indices ++ fieldsVal)) .default))) (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) α) β) (.bvar 0)) (.app (.app (.app (.const ``Nat.le.ndrec []) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree (.bvar 1)) (.bvar 0)) (indices.push (.app (.bvar 2) (.bvar 1)) |>.push (.app (.bvar 2) (.bvar 0)))) .default) .default)) (.lam `ℓ' (.const ``Nat []) (.const ``True.intro []) .default)) (← mkLambdaFVars #[ℓ, ℓ', h] (.lam `ih (mkAppN (.app (.app agree (.bvar 2)) (.bvar 1)) (indices.push (.app (.bvar 3) (.bvar 2)) |>.push (.app (.bvar 3) (.bvar 1)))) (mkAppN (.app (.app (.app agreePatternCtor (.app approx ℓ)) (.app approx ℓ')) (.app (.app agree ℓ) ℓ')) ((indices.push (.app (.bvar 4) (.app (.const ``Nat.succ []) ℓ)) |>.push (.app (.bvar 4) (.app (.const ``Nat.succ []) ℓ'))) ++ fieldsProperty)) .default)))) false)
-      value := ← mkLambdaFVars (params ++ indices ++ fields) (.letE `val (.forallE `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default) (.lam `ℓ (.const ``Nat []) (.app (.app (.app (.app (.const ``Nat.rec [resultLevel]) (.lam `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default)) (.const ``PUnit.unit [resultLevel])) (← mkLambdaFVars #[ℓ] (.lam `mk (mkAppN (.app approx ℓ) indices) (mkAppN (.app patternCtor (.app approx ℓ)) (indices ++ fieldsVal)) .default))) (.bvar 0)) .default) (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) α) β) (.bvar 0)) (.app (.app (.app (.const ``Nat.le.ndrec []) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree (.bvar 1)) (.bvar 0)) (indices.push (.app (.bvar 2) (.bvar 1)) |>.push (.app (.bvar 2) (.bvar 0)))) .default) .default)) (.lam `ℓ' (.const ``Nat []) (.const ``True.intro []) .default)) (← mkLambdaFVars #[ℓ, ℓ', h] (.lam `ih (mkAppN (.app (.app agree (.bvar 2)) (.bvar 1)) (indices.push (.app (.bvar 3) (.bvar 2)) |>.push (.app (.bvar 3) (.bvar 1)))) (mkAppN (.app (.app (.app agreePatternCtor (.app approx ℓ)) (.app approx ℓ')) (.app (.app agree ℓ) ℓ')) ((indices.push (.app (.bvar 4) (.app (.const ``Nat.succ []) ℓ)) |>.push (.app (.bvar 4) (.app (.const ``Nat.succ []) ℓ'))) ++ fieldsProperty)) .default)))) false)
+      value := ← mkLambdaFVars (params ++ indices ++ fields) (.letE `val (.forallE `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default) (.lam `ℓ (.const ``Nat []) (.app (.app (.app (.app (.const ``Nat.casesOn [resultLevel]) (.lam `ℓ (.const ``Nat []) (mkAppN (.app approx (.bvar 0)) indices) .default)) (.bvar 0)) (.const ``PUnit.unit [resultLevel])) (← mkLambdaFVars #[ℓ] (mkAppN (.app patternCtor (.app approx ℓ)) (indices ++ fieldsVal)))) .default) (.app (.app (.app (.app (.const ``Subtype.mk [resultLevel]) α) β) (.bvar 0)) (.lam `ℓ (.const ``Nat []) (.lam `ℓ' (.const ``Nat []) (.app (.app (.app (.app (.const ``Nat.casesOn [.zero]) (.lam `ℓ (.const ``Nat []) (mkAppN (.app (.app agree (.bvar 0)) (.bvar 1)) (indices.push (.app (.bvar 3) (.bvar 0)) |>.push (.app (.bvar 3) (.bvar 1)))) .default)) (.bvar 1)) (.const ``True.intro [])) (← mkLambdaFVars #[ℓ] (.app (.app (.app (.app (.const ``Nat.casesOn [.zero]) (.lam `ℓ' (.const ``Nat []) (mkAppN (.app (.app agree (.app (.const ``Nat.succ []) (.bvar 1))) (.bvar 0)) (indices.push (.app (.bvar 4) (.app (.const ``Nat.succ []) (.bvar 1))) |>.push (.app (.bvar 4) (.bvar 0)))) .default)) (.bvar 1)) (.const ``True.intro [])) (← mkLambdaFVars #[ℓ'] (mkAppN (.app (.app (.app agreePatternCtor (.app approx ℓ)) (.app approx ℓ')) (.app (.app agree ℓ) ℓ')) ((indices.push (.app (.bvar 4) (.app (.const ``Nat.succ []) ℓ)) |>.push (.app (.bvar 4) (.app (.const ``Nat.succ []) ℓ'))) ++ fieldsProperty)))))) .default) .default)) false)
       hints := .abbrev -- .opaque -- TODO
       safety := .safe
     }
@@ -387,10 +380,10 @@ def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
           let eqRhs₀' := .proj patternName fieldIdx (.app (.proj ``Subtype 0 rhs) (.app (.const ``Nat.succ []) (.const ``Nat.zero [])))
           let eqRhs' := mkAppN eqRhs₀' argVals
           let fieldType := fieldType.replaceFVars indices indexVals
-          let eq₁ := .proj agreePatternName fieldIdx (.app (.app (.app (.proj ``Subtype 1 lhs) (.app (.const ``Nat.succ []) (.const ``Nat.zero []))) (.app (.const ``Nat.succ []) ℓ)) (.app (.app (.const ``Nat.le_add_left []) (.app (.const ``Nat.succ []) (.const ``Nat.zero []))) ℓ))
+          let eq₁ := .proj agreePatternName fieldIdx (.app (.app (.proj ``Subtype 1 lhs) (.app (.const ``Nat.succ []) (.const ``Nat.zero []))) (.app (.const ``Nat.succ []) ℓ))
           let eq₁ := .app (.app (.app (.app (.app (.app (.const ``congrArg [fieldTypeLevel, bodyLevel]) fieldType) body) eqLhs₀') eqLhs₀) (.lam `f fieldType (mkAppN (.bvar 0) argVals) .default)) eq₁
           let eq₂ := mkAppN extMinors[fieldIdx]! (args[:majorIdx].toArray.push lhs |>.push rhs |>.push h)
-          let eq₃ := .proj agreePatternName fieldIdx (.app (.app (.app (.proj ``Subtype 1 rhs) (.app (.const ``Nat.succ []) (.const ``Nat.zero []))) (.app (.const ``Nat.succ []) ℓ)) (.app (.app (.const ``Nat.le_add_left []) (.app (.const ``Nat.succ []) (.const ``Nat.zero []))) ℓ))
+          let eq₃ := .proj agreePatternName fieldIdx (.app (.app (.proj ``Subtype 1 rhs) (.app (.const ``Nat.succ []) (.const ``Nat.zero []))) (.app (.const ``Nat.succ []) ℓ))
           let eq₃ := .app (.app (.app (.app (.app (.app (.const ``congrArg [fieldTypeLevel, bodyLevel]) fieldType) body) eqRhs₀') eqRhs₀) (.lam `f fieldType (mkAppN (.bvar 0) argVals) .default)) eq₃
           mkLambdaFVars #[lhs, rhs, h] (.app (.app (.app (.app (.app (.app (.const ``Eq.trans [bodyLevel]) body) eqLhs) eqLhs') eqRhs) (.app (.app (.app (.app (.const ``Eq.symm [bodyLevel]) body) eqLhs') eqLhs) eq₁)) (.app (.app (.app (.app (.app (.app (.const ``Eq.trans [bodyLevel]) body) eqLhs') eqRhs') eqRhs) eq₂) eq₃))
       let mut lhsBody := mkAppN lhsField args

@@ -1,14 +1,3 @@
-@[elab_as_elim]
-theorem Nat.le.rec' {motive : ∀ n m, Nat.le n m → Prop} (zero_le : ∀ {m}, motive .zero m m.zero_le) (succ_le_succ : ∀ {n m} h, motive n m h → motive n.succ m.succ (Nat.succ_le_succ h)) : ∀ {n m} h, motive n m h
-  | .zero, _, _ => zero_le
-  | .succ _, .succ _, h => succ_le_succ (Nat.le_of_succ_le_succ h) (rec' @zero_le @succ_le_succ _)
-
-@[elab_as_elim]
-theorem Nat.le.casesOn' {motive : ∀ n m, Nat.le n m → Prop} {n m} h (zero_le : ∀ {m}, motive .zero m m.zero_le) (succ_le_succ : ∀ {n m} h, motive (.succ n) (.succ m) (Nat.succ_le_succ h)) : motive n m h :=
-  match n, m with
-  | .zero, _ => zero_le
-  | .succ _, .succ _ => succ_le_succ (Nat.le_of_succ_le_succ h)
-
 namespace M
 
 variable {α : Type u} (β : (a : α) → Type v)
@@ -21,13 +10,14 @@ variable {β}
 
 private inductive Approx.Agree : (m : Approx β ℓ) → (m' : Approx β ℓ') → Prop
   | hole {m' : Approx β ℓ'} : Agree hole m'
+  | hole' {m : Approx β ℓ} : Agree m hole
   | node a {t : (b : β a) → Approx β ℓ} {t' : (b : β a) → Approx β ℓ'} (h : ∀ b, Agree (t b) (t' b)) : Agree (node a t) (node a t')
 
 end M
 
 @[irreducible]
 def M {α : Type u} (β : (a : α) → Type v) : Type (max u v) :=
-  { f : ∀ ℓ, M.Approx β ℓ // ∀ {ℓ ℓ'}, (h : ℓ ≤ ℓ') → (f ℓ).Agree (f ℓ') }
+  { f : ∀ ℓ, M.Approx β ℓ // ∀ ℓ ℓ', (f ℓ).Agree (f ℓ') }
 
 namespace M
 
@@ -46,13 +36,13 @@ private theorem hd_eq {m : M β} (h : m.val (.succ ℓ) = .node a t) : hd m = a 
   dsimp only [hd]
   split
   next h' =>
-  cases h ▸ h' ▸ m.property (Nat.succ_le_succ ℓ.zero_le)
+  cases h ▸ h' ▸ m.property (.succ .zero) ℓ.succ
   rfl
 
 @[irreducible]
 def tl (m : M β) (b : β m.hd) : M β where
   val ℓ := match h : m.val ℓ.succ with | .node _ t => t (hd_eq h ▸ b)
-  property hℓ := by dsimp only; split; split; next h _ _ h' => cases h ▸ h' ▸ m.property (Nat.succ_le_succ hℓ) with | node _ h => apply h
+  property ℓ ℓ' := by dsimp only; split; split; next h _ _ h' => cases h ▸ h' ▸ m.property ℓ.succ ℓ'.succ with | node _ h => apply h
 
 unseal tl
 
@@ -83,8 +73,8 @@ variable {C : Sort w} (hd : (c : C) → α) (tl : ∀ c, (b : β (hd c)) → C) 
 
 @[irreducible]
 def gen : M β where
-  val       ℓ :=  ℓ.rec  (fun _ => .hole) (fun _ gen c => .node (hd c) fun b => gen (tl c b)) c
-  property hℓ := hℓ.rec' (fun _ => .hole) (fun _ gen c => .node (hd c) fun b => gen (tl c b)) c
+  val ℓ := ℓ.rec (fun _ => .hole) (fun _ gen c => .node (hd c) fun b => gen (tl c b)) c
+  property ℓ := ℓ.rec (fun _ _ => .hole) (fun _ gen c ℓ' => ℓ'.casesOn .hole' fun ℓ' => .node (hd c) fun b => gen (tl c b) ℓ') c
 
 unseal gen
 
@@ -102,8 +92,8 @@ variable (hd : α) (tl : (b : β hd) → M β)
 
 @[irreducible]
 def mk : M β where
-  val       ℓ :=  ℓ.casesOn  .hole fun ℓ => .node hd fun b => (tl b).val ℓ
-  property hℓ := hℓ.casesOn' .hole fun ℓ => .node hd fun b => (tl b).property ℓ
+  val ℓ := ℓ.casesOn .hole fun ℓ => .node hd fun b => (tl b).val ℓ
+  property ℓ ℓ' := ℓ.casesOn .hole fun ℓ => ℓ'.casesOn .hole' fun ℓ' => .node hd fun b => (tl b).property ℓ ℓ'
 
 unseal mk
 
@@ -132,13 +122,14 @@ variable {s}
 
 private inductive Approx.Agree : (m : Approx s i ℓ) → (m' : Approx s i ℓ') → Prop
   | hole {m' : Approx s i ℓ'} : Agree hole m'
+  | hole' {m : Approx s i ℓ} : Agree m hole
   | node a {t : ∀ b, Approx s (s i a b) ℓ} {t' : ∀ b, Approx s (s i a b) ℓ'} (h : ∀ b, Agree (t b) (t' b)) : Agree (node a t) (node a t')
 
 end IM
 
 @[irreducible]
 def IM {ι : Type u} {α : (i : ι) → Type v} {β : ∀ i, (a : α i) → Type w} (s : ∀ i a, (b : β i a) → ι) (i : ι) : Type (max u v w) :=
-  { f : ∀ ℓ, IM.Approx s i ℓ // ∀ {ℓ ℓ'}, (h : ℓ ≤ ℓ') → (f ℓ).Agree (f ℓ') }
+  { f : ∀ ℓ, IM.Approx s i ℓ // ∀ ℓ ℓ', (f ℓ).Agree (f ℓ') }
 
 namespace IM
 
@@ -157,13 +148,13 @@ private theorem hd_eq {m : IM s i} (h : m.val (.succ ℓ) = .node a t) : hd m = 
   dsimp only [hd]
   split
   next h' =>
-  cases h ▸ h' ▸ m.property (Nat.succ_le_succ ℓ.zero_le)
+  cases h ▸ h' ▸ m.property (.succ .zero) ℓ.succ
   rfl
 
 @[irreducible]
 def tl (m : IM s i) (b : β i m.hd) : IM s (s i m.hd b) where
   val ℓ := match h : m.val ℓ.succ with | .node _ t => by cases hd_eq h; exact t b
-  property hℓ := by dsimp only; split; split; next h _ _ h' => cases hd_eq h; cases h ▸ h' ▸ m.property (Nat.succ_le_succ hℓ) with | node _ h => apply h
+  property ℓ ℓ' := by dsimp only; split; split; next h _ _ h' => cases hd_eq h; cases h ▸ h' ▸ m.property ℓ.succ ℓ'.succ with | node _ h => apply h
 
 def tl' (m : IM s i) (h : a = m.hd) : (b : β i a) → IM s (s i a b) := by
   cases h
@@ -201,8 +192,8 @@ variable {C : (i : ι) → Sort x} (hd : ∀ {i}, (c : C i) → α i) (tl : ∀ 
 
 @[irreducible]
 def gen : IM s i where
-  val       ℓ :=  ℓ.rec  (fun _ _ => .hole) (fun _ gen i c => .node (hd c) fun b => gen (s i (hd c) b) (tl c b)) i c
-  property hℓ := hℓ.rec' (fun _ _ => .hole) (fun _ gen i c => .node (hd c) fun b => gen (s i (hd c) b) (tl c b)) i c
+  val ℓ := ℓ.rec (fun _ _ => .hole) (fun _ gen i c => .node (hd c) fun b => gen (s i (hd c) b) (tl c b)) i c
+  property ℓ := ℓ.rec (fun _ _ _ => .hole) (fun _ gen i c ℓ' => ℓ'.casesOn .hole' fun ℓ' => .node (hd c) fun b => gen (s i (hd c) b) (tl c b) ℓ') i c
 
 unseal gen
 
@@ -222,8 +213,8 @@ variable (hd : α i) (tl : (b : β i hd) → IM s (s i hd b))
 
 @[irreducible]
 def mk : IM s i where
-  val       ℓ :=  ℓ.casesOn  .hole fun ℓ => .node hd fun b => (tl b).val ℓ
-  property hℓ := hℓ.casesOn' .hole fun ℓ => .node hd fun b => (tl b).property ℓ
+  val ℓ := ℓ.casesOn .hole fun ℓ => .node hd fun b => (tl b).val ℓ
+  property ℓ ℓ' := ℓ.casesOn .hole fun ℓ => ℓ'.casesOn .hole' fun ℓ' => .node hd fun b => (tl b).property ℓ ℓ'
 
 unseal mk
 
