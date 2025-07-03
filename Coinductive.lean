@@ -26,11 +26,13 @@ private partial def getUnusedLevelParam (levelParams : List Name) : Name :=
   else
     `u
 
--- TODO: optimize ctor equality fields
 -- TODO: switch from subtype to structure
 -- TODO: dependent fields
+-- TODO: optimize ctor equality fields
 -- TODO: computable
 -- TODO: nested/mutual
+
+-- TODO: codef or cofix def
 
 def CoinductiveType.elab (view : CoinductiveType) : MetaM Unit :=
   forallBoundedTelescope view.type view.numParams fun params type => do
@@ -504,6 +506,17 @@ theorem InfStream.ofFn_get : ofFn (get s) = s := by
   rw [get_ofFn]
 
 set_option linter.unusedVariables false
+
+coinductive InfStream.Eq {α : Type u} : (xs ys : InfStream α) → Type u where
+  hd_eq {xs ys : InfStream α} (self : xs.Eq ys) : xs.hd = ys.hd
+  tl_eq {xs ys : InfStream α} (self : xs.Eq ys) : xs.tl.Eq ys.tl
+
+noncomputable
+def InfStream.Eq.ofEq {xs ys : InfStream α} : xs = ys → xs.Eq ys :=
+  .corec _ (congrArg hd) (congrArg tl)
+
+theorem InfStream.Eq.toEq {xs ys : InfStream α} (h : xs.Eq ys) : xs = ys :=
+  InfStream.ext (Nonempty <| ·.Eq ·) (fun _ _ ⟨h⟩ => h.hd_eq) (fun _ _ ⟨h⟩ => ⟨h.tl_eq⟩) ⟨h⟩
 
 coinductive Vec (α : Type u) : (n : Nat) → Type u where
   hd {n} (xs : Vec α (n + 1)) : α
