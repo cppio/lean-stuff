@@ -164,52 +164,64 @@ axiom Qux.tl_corec σ hd tl val₁ val₂ s : (corec σ hd tl val₁ val₂ s).t
 axiom Qux.val₁_corec {σ hd tl val₁ val₂} s : (corec σ hd tl val₁ val₂ s).val₁ n = (val₁ s n).cast (congrArg (· + n) (.trans (.symm (hd_corec σ hd tl val₁ val₂ (n.rec s fun _ => tl))) (congrArg Qux.hd (.symm (rec_comp (tl_corec σ hd tl val₁ val₂))))))
 axiom Qux.val₂_corec {σ hd tl val₁ val₂} s : (corec σ hd tl val₁ val₂ s).val₂ n = (val₂ s n).cast (congrArg (· + n) (.trans (.symm (hd_corec σ hd tl val₁ val₂ (iter tl s n))) (congrArg Qux.hd (.symm (iter_comp (tl_corec σ hd tl val₁ val₂))))))
 
-variable {α : Type} {β : α → Type} (γ : ∀ a, β a → α → Type)
+variable {α : Type} {β : α → Type} (γ : ∀ a, β a → α → Type) (δ : ∀ a, β a → ∀ a', β a' → α → Type)
 
-def WW.Approx : Nat → (Approx : Type) × ∀ hd, (β hd → Approx) → Type
-  | 0 => ⟨Unit, fun _ _ => Unit⟩
-  | ℓ + 1 => ⟨(hd : α) × (tl : β hd → (Approx ℓ).1) × (Approx ℓ).2 hd tl, fun hd tl => ∀ b, γ hd b (tl b).1⟩
+def WW.Approx : Nat → (Approx : Type) × (∀ hd, (β hd → Approx) → Type) × (∀ hd, (β hd → Approx) → Type) × ∀ hd (hd' : β hd → α), (∀ b, β (hd' b) → Approx) → Type
+  | 0 => ⟨Unit, fun _ _ => Unit, fun _ _ => Unit, fun _ _ _ => Unit⟩
+  | ℓ + 1 => ⟨(hd : α) × (tl : β hd → (Approx ℓ).1) × (Approx ℓ).2.1 hd tl × (Approx ℓ).2.2.1 hd tl, fun hd tl => ∀ b, γ hd b (tl b).1, fun hd tl => (Approx ℓ).2.2.2 hd (fun b => (tl b).1) (fun b => (tl b).2.1), fun hd hd' tl => ∀ b b', δ hd b (hd' b) b' (tl b b').1⟩
 
-variable {γ} in
-def WW.Agree : (p : (Approx γ ℓ).1 → (Approx γ ℓ').1 → Prop) × ∀ {hd tl tl'}, (∀ b, p (tl b) (tl' b)) → (Approx γ ℓ).2 hd tl → (Approx γ ℓ').2 hd tl' → Prop :=
+variable {γ δ} in
+def WW.Agree : (p : (Approx γ δ ℓ).1 → (Approx γ δ ℓ').1 → Prop) × (∀ {hd tl tl'}, (∀ b, p (tl b) (tl' b)) → (Approx γ δ ℓ).2.1 hd tl → (Approx γ δ ℓ').2.1 hd tl' → Prop) × (∀ {hd tl tl'}, (∀ b, p (tl b) (tl' b)) → (Approx γ δ ℓ).2.2.1 hd tl → (Approx γ δ ℓ').2.2.1 hd tl' → Prop) × ∀ {hd hd' tl tl'}, (∀ b b', p (tl b b') (tl' b b')) → (Approx γ δ ℓ).2.2.2 hd hd' tl → (Approx γ δ ℓ').2.2.2 hd hd' tl' → Prop :=
   match ℓ, ℓ' with
-  | 0, _ => ⟨fun _ _ => True, fun _ _ _ => True⟩
-  | _ + 1, 0 => ⟨fun _ _ => True, fun _ _ _ => True⟩
-  | _ + 1, _ + 1 => ⟨fun a a' => ∃ hhd : a.1 = a'.1, ∃ htl, Agree.2 htl a.2.2 (hhd.symm.rec (motive := fun hd hhd => (Approx γ _).2 hd (fun b => a'.2.1 (hhd ▸ b :))) a'.2.2), fun htl c c' => ∀ b, c b = (htl b).1 ▸ c' b⟩
+  | 0, _ => ⟨fun _ _ => True, fun _ _ _ => True, fun _ _ _ => True, fun _ _ _ => True⟩
+  | _ + 1, 0 => ⟨fun _ _ => True, fun _ _ _ => True, fun _ _ _ => True, fun _ _ _ => True⟩
+  | _ + 1, _ + 1 => ⟨fun a a' => ∃ hhd : a.1 = a'.1, ∃ htl, Agree.2.1 htl a.2.2.1 (hhd.symm.rec (motive := fun hd hhd => (Approx γ δ _).2.1 hd fun b => a'.2.1 (hhd ▸ b :)) a'.2.2.1) ∧ Agree.2.2.1 htl a.2.2.2 (hhd.symm.rec (motive := fun hd hhd => (Approx γ δ _).2.2.1 hd fun b => a'.2.1 (hhd ▸ b :)) a'.2.2.2), fun htl c c' => ∀ b, c b = (htl b).1 ▸ c' b, fun {_ _ tl'} htl c c' => Agree.2.2.2 (fun b b' => (htl b).2.1 b') c ((funext fun b => (htl b).1.symm).rec (motive := fun hd' hhd' => (Approx γ δ _).2.2.2 _ hd' fun b b' => (tl' b).2.1 (congrFun hhd' b ▸ b' :)) c'), fun htl c c' => ∀ b b', c b b' = (htl b b').1 ▸ c' b b'⟩
 
 def WW : Type :=
-  { f : ∀ ℓ, (WW.Approx γ ℓ).1 // ∀ ℓ ℓ', WW.Agree.1 (f ℓ) (f ℓ') }
+  { f : ∀ ℓ, (WW.Approx γ δ ℓ).1 // ∀ ℓ ℓ', WW.Agree.1 (f ℓ) (f ℓ') }
 
-variable {γ}
+variable {γ δ}
 
-def WW.hd (self : WW γ) : α :=
+def WW.hd (self : WW γ δ) : α :=
   (self.1 1).1
 
-def WW.tl (self : WW γ) (b : β self.hd) : WW γ :=
+def WW.tl (self : WW γ δ) (b : β self.hd) : WW γ δ :=
   ⟨fun ℓ => (self.1 ℓ.succ).2.1 ((self.2 1 ℓ.succ).1 ▸ b), fun ℓ ℓ' => cast (by grind only) ((self.2 ℓ.succ ℓ'.succ).2.1 ((self.2 1 ℓ.succ).1 ▸ b))⟩
 
-def WW.val (self : WW γ) b : γ self.hd b (self.tl b).hd :=
-  (self.2 2 1).1.rec (motive := fun hd hhd => γ hd ((self.2 1 2).1.trans hhd ▸ b) _) ((self.1 2).2.2 ((self.2 1 2).1 ▸ b))
+def WW.val (self : WW γ δ) b : γ self.hd b (self.tl b).hd :=
+  (self.2 2 1).1.rec (motive := fun hd hhd => γ hd ((self.2 1 2).1.trans hhd ▸ b) _) ((self.1 2).2.2.1 ((self.2 1 2).1 ▸ b))
 
-def WW.corec' (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ s b, γ (hd s) b (hd (tl s b))) : ∀ ℓ, (f : σ → (Approx γ ℓ).1) × ∀ s, (Approx γ ℓ).2 (hd s) fun b => f (tl s b)
-  | 0 => ⟨fun _ => (), fun _ => ()⟩
-  | ℓ + 1 => ⟨fun s => ⟨hd s, fun b => (corec' σ hd tl val ℓ).1 (tl s b), (corec' σ hd tl val ℓ).2 s⟩, val⟩
+def WW.val' (self : WW γ δ) b b' : δ self.hd b (self.tl b).hd b' ((self.tl b).tl b').hd :=
+  cast (by dsimp only [hd, tl]; congr <;> grind only) (((self.2 3 2).2.1 ((self.2 1 3).1 ▸ b)).1.rec (motive := fun hd' hhd' => δ _ b hd' ((show _ = ((self.1 3).snd.fst ((self.2 1 3).1 ▸ b)).1 from ((self.2 2 3).2.1 ((self.2 1 2).1 ▸ b)).1.trans (by grind only)).trans hhd' ▸ b') _) ((self.2 3 1).1.rec (motive := fun hd hhd => δ hd ((self.2 1 3).1.trans hhd ▸ b) _ _ _) ((self.1 3).2.2.2 ((self.2 1 3).1 ▸ b) (Eq.ndrec b' (((self.2 2 3).2.1 ((self.2 1 2).1 ▸ b)).1.trans (by grind only))))))
 
-def WW.corec (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ s b, γ (hd s) b (hd (tl s b))) (s : σ) : WW γ :=
-  .mk (fun ℓ => (corec' σ hd tl val ℓ).1 s) fun ℓ ℓ' => by
+def WW.corec' (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ s b, γ (hd s) b (hd (tl s b))) (val' : ∀ s b b', δ (hd s) b (hd (tl s b)) b' (hd (tl (tl s b) b'))) : ∀ ℓ, (f : σ → (Approx γ δ ℓ).1) × (∀ s, (Approx γ δ ℓ).2.1 (hd s) fun b => f (tl s b)) × (∀ s, (Approx γ δ ℓ).2.2.1 (hd s) fun b => f (tl s b)) × ∀ s, (Approx γ δ ℓ).2.2.2 (hd s) (fun b => hd (tl s b)) fun b b' => f (tl (tl s b) b')
+  | 0 => ⟨fun _ => (), fun _ => (), fun _ => (), fun _ => ()⟩
+  | ℓ + 1 => ⟨fun s => ⟨hd s, fun b => (corec' σ hd tl val val' ℓ).1 (tl s b), (corec' σ hd tl val val' ℓ).2.1 s, (corec' σ hd tl val val' ℓ).2.2.1 s⟩, val, (corec' σ hd tl val val' ℓ).2.2.2, val'⟩
+
+def WW.corec (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ s b, γ (hd s) b (hd (tl s b))) (val' : ∀ s b b', δ (hd s) b (hd (tl s b)) b' (hd (tl (tl s b) b'))) (s : σ) : WW γ δ :=
+  .mk (fun ℓ => (corec' σ hd tl val val' ℓ).1 s) fun ℓ ℓ' => by
     induction ℓ generalizing s ℓ' with | zero => constructor | succ ℓ ih =>
     cases ℓ' with | zero => constructor | succ ℓ' =>
-    refine ⟨rfl, fun b => ih (tl s b) ℓ', ?_⟩
-    cases ℓ with | zero => constructor | succ ℓ =>
-    cases ℓ' with | zero => constructor | succ ℓ' =>
-    intro
-    rfl
+    refine ⟨rfl, fun b => ih (tl s b) ℓ', ?_, ?_⟩
+    . cases ℓ with | zero => constructor | succ ℓ =>
+      cases ℓ' with | zero => constructor | succ ℓ' =>
+      intro b
+      rfl
+    . cases ℓ with | zero => constructor | succ ℓ =>
+      cases ℓ' with | zero => constructor | succ ℓ' =>
+      cases ℓ with | zero => constructor | succ ℓ =>
+      cases ℓ' with | zero => constructor | succ ℓ' =>
+      intro b b'
+      rfl
 
-theorem WW.hd_corec σ hd tl val s : (@corec α β γ σ hd tl val s).hd = hd s :=
+theorem WW.hd_corec σ hd tl val val' s : (@corec α β γ δ σ hd tl val val' s).hd = hd s :=
   rfl
 
-theorem WW.tl_corec σ hd tl val s b : (@corec α β γ σ hd tl val s).tl b = corec σ hd tl val (tl s b) :=
+theorem WW.tl_corec σ hd tl val val' s b : (@corec α β γ δ σ hd tl val val' s).tl b = corec σ hd tl val val' (tl s b) :=
   rfl
 
-theorem WW.val_corec σ hd tl val s b : (@corec α β γ σ hd tl val s).val b = val s b :=
+theorem WW.val_corec σ hd tl val val' s b : (@corec α β γ δ σ hd tl val val' s).val b = val s b :=
+  rfl
+
+theorem WW.val'_corec σ hd tl val val' s b b' : (@corec α β γ δ σ hd tl val val' s).val' b b' = val' s b b' :=
   rfl
