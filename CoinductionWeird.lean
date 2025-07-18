@@ -1,227 +1,266 @@
-def iter (f : α → α) (x : α) : Nat → α
-  | 0 => x
-  | n + 1 => iter f (f x) n
+@[simp]
+theorem eqRec_heq_eq : (@Eq.rec α x motive lhs y h ≍ rhs) = (lhs ≍ rhs) :=
+  by cases h; rfl
 
-theorem iter_succ : iter f x n.succ = f (iter f x n) := by
-  induction n generalizing x with apply_assumption
+theorem eqRec_pi {α : Sort u} {x : α} {motive₁ : ∀ y, x = y → Sort v} (motive₂ : ∀ y h, motive₁ y h → Sort w) {refl : ∀ z, motive₂ x rfl z} {y : α} {h : x = y} : @Eq.rec α x (fun y h => ∀ z, motive₂ y h z) refl y h = fun z => cast (by cases h; rfl) (refl (h.symm.rec (motive := fun x h' => motive₁ x (h.trans h')) z)) :=
+  by cases h; rfl
 
-def Foo : Type :=
-  (hd : Nat → Nat) × (∀ s, Fin (hd s)) × (∀ s, Fin (hd (.succ s)))
+@[simp]
+theorem eqRec_eqRec {α : Sort u} {x : α} {motive : ∀ y, x = y → Sort v} {refl : motive x rfl} {y : α} {h : x = y} {z : α} {h' : y = z} : @Eq.rec α y (fun z h' => motive z (h.trans h')) (@Eq.rec α x motive refl y h) z h' = @Eq.rec α x motive refl z (h.trans h') :=
+  by cases h; rfl
 
-def Foo.hd (self : Foo) : Nat :=
-  self.1 .zero
+theorem hfunext {α : Sort u} {β γ : α → Sort v} {f : ∀ x, β x} {g : ∀ x, γ x} (h : ∀ x, f x ≍ g x) : f ≍ g := by
+  cases funext fun x => type_eq_of_heq (h x)
+  simp at h ⊢
+  exact funext h
 
-def Foo.tl (self : Foo) : Foo :=
-  ⟨(self.1 ·.succ), (self.2.1 ·.succ), (self.2.2 ·.succ)⟩
+theorem hfunext' {α α' : Sort u} {β : α → Sort v} {γ : α' → Sort v} {f : ∀ x, β x} {g : ∀ y, γ y} (hα : α = α') (h : ∀ x y, x ≍ y → f x ≍ g y) : f ≍ g := by
+  cases hα
+  simp at h
+  cases funext fun x => type_eq_of_heq (h x)
+  simp at h ⊢
+  exact funext h
 
-def Foo.good (self : Foo) : Fin self.hd :=
-  self.2.1 .zero
+variable {α : Type} {β : α → Type}
 
-def Foo.bad (self : Foo) : Fin self.tl.hd :=
-  self.2.2 .zero
+variable (hd : σ → α) (tl : ∀ s, β (hd s) → σ) in
+inductive Valid : σ → List (Σ a, β a) → α → Prop
+  | nil : Valid s [] (hd s)
+  | cons : Valid (tl s b) bs a → Valid s (⟨hd s, b⟩ :: bs) a
 
-def Foo.corec (σ : Sort u) (hd : σ → Nat) (tl : σ → σ) (good : ∀ s, Fin (hd s)) (bad : ∀ s, Fin (hd (tl s))) (s : σ) : Foo :=
-  ⟨(hd <| iter tl s ·), (good <| iter tl s ·), fun n => (bad (iter tl s n)).cast (congrArg hd iter_succ.symm)⟩
+theorem Valid.comap (f : σ' → σ) (hd_f : ∀ s, hd (f s) = hd' s) (tl_f : ∀ s b, tl (f s) b = f (tl' s (hd_f s ▸ b))) (h : @Valid σ α β hd tl (f s) bs a) : @Valid σ' α β hd' tl' s bs a := by
+  generalize hs : f s = s' at h
+  induction h generalizing s with
+  | nil =>
+    cases hs
+    rewrite [hd_f]
+    constructor
+  | cons =>
+    cases hs
+    generalize hb : Sigma.mk .. = b'
+    rcases b' with ⟨a, b'⟩
+    cases (congrArg (·.1) hb).symm.trans (hd_f s)
+    constructor
+    grind
 
-theorem Foo.hd_corec σ hd tl good bad s : (corec σ hd tl good bad s).hd = hd s :=
-  rfl
+theorem Valid.ext {σ hd tl} {r : σ → σ → Prop} (rhd : ∀ {s s'}, r s s' → hd s = hd s') (rtl : ∀ {s s'} h b, r (tl s b) (tl s' (rhd h ▸ b))) {s s'} (rs : r s s') (h : @Valid σ α β hd tl s bs a) : Valid hd tl s' bs a := by
+  induction h generalizing s' with
+  | nil => rewrite [rhd rs]; constructor
+  | @cons _ b _ _ h ih =>
+    generalize hb : Sigma.mk .. = b
+    cases b
+    simp [rhd rs] at hb
+    rcases hb with ⟨rfl, hb⟩
+    constructor
+    replace hb : rhd rs ▸ b = _ := eq_of_heq (.trans (by simp) hb)
+    exact ih (hb ▸ rtl rs _)
 
-theorem Foo.tl_corec σ hd tl good bad s : (corec σ hd tl good bad s).tl = corec σ hd tl good bad (tl s) :=
-  rfl
+def Valid' (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (s : σ) (bs : List (Σ a, β a)) (a : α) : Prop :=
+  match bs with
+  | [] => a = hd s
+  | b :: bs => ∃ h : b.1 = hd s, Valid' hd tl (tl s (h ▸ b.2)) bs a
+  --bs.foldr (fun b k s => ∃ h : b.1 = hd s, k (tl s (h ▸ b.2))) (fun s => a = hd s) s
 
-theorem Foo.good_corec σ hd tl good bad s : (corec σ hd tl good bad s).good = good s :=
-  rfl
+theorem Valid'.comap (f : σ' → σ) (hd_f : ∀ s, hd (f s) = hd' s) (tl_f : ∀ s b, tl (f s) b = f (tl' s (hd_f s ▸ b))) (h : @Valid' α β σ hd tl (f s) bs a) : @Valid' α β σ' hd' tl' s bs a :=
+  by induction bs generalizing s with grind [Valid']
 
-theorem Foo.bad_corec σ hd tl good bad s : (corec σ hd tl good bad s).bad = bad s :=
-  rfl
+variable (γ : List (Σ a, β a) → α → Type)
 
-def Bar.Approx : Nat → (α : Type) × (α → Type)
-  | 0 => ⟨Unit, fun _ => Unit⟩
-  | ℓ + 1 => ⟨(hd : Nat) × (tl : (Approx ℓ).1) × Fin hd × ((Approx ℓ).2 tl), fun s => Fin s.1⟩
+def MW.Approx : Nat → (σ : Type) × (σ → List (Σ a, β a) → α → Prop)
+  | 0 => ⟨Unit, fun _ _ _ => False⟩
+  | ℓ + 1 =>
+    let p s bs a := bs.casesOn (a = s.1) fun b bs => ∃ h : b.1 = s.1, (Approx ℓ).2 (s.2 (h ▸ b.2)) bs a
+    ⟨(s : Σ hd, β hd → (Approx ℓ).1) × ∀ bs a, p s bs a → γ bs a, (p ·.1)⟩
 
-def Bar.Approx.Agree : ∀ ℓ ℓ', (a : (Approx ℓ).1) → (a' : (Approx ℓ').1) → Prop × ((Approx ℓ).2 a → (Approx ℓ').2 a' → Prop)
-  | 0, _, _, _ => (True, fun _ _ => True)
-  | _ + 1, 0, _, _ => (True, fun _ _ => True)
-  | ℓ + 1, ℓ' + 1, a, a' => (∃ hd : a.1 = a'.1, (Agree ℓ ℓ' a.2.1 a'.2.1).1 ∧ a.2.2.1 = hd ▸ a'.2.2.1 ∧ (Agree ℓ ℓ' a.2.1 a'.2.1).2 a.2.2.2 a'.2.2.2, fun lhs (rhs : Fin _) => ∃ hd : a.1 = a'.1, hd ▸ lhs = rhs)
-
-def Bar : Type :=
-  { f : ∀ ℓ, (Bar.Approx ℓ).1 // ∀ ℓ ℓ', (Bar.Approx.Agree ℓ ℓ' (f ℓ) (f ℓ')).1 }
-
-def Bar.hd (self : Bar) : Nat :=
-  (self.1 (.succ .zero)).1
-
-def Bar.tl (self : Bar) : Bar :=
-  ⟨fun ℓ => (self.1 ℓ.succ).2.1, fun ℓ ℓ' => (self.2 ℓ.succ ℓ'.succ).2.1⟩
-
-def Bar.good (self : Bar) : Fin self.hd :=
-  (self.1 (.succ .zero)).2.2.1
-
-def Bar.bad (self : Bar) : Fin self.tl.hd :=
-  (self.1 (.succ (.succ .zero))).2.2.2
-
-def Bar.corec' (σ : Sort u) (hd : σ → Nat) (tl : σ → σ) (good : ∀ s, Fin (hd s)) (bad : ∀ s, Fin (hd (tl s))) (s : σ) : ∀ ℓ, (x : (Approx ℓ).1) × (Fin (hd s) → (Approx ℓ).2 x)
-  | 0 => ⟨(), fun _ => ()⟩
-  | ℓ + 1 => ⟨⟨hd s, (corec' σ hd tl good bad (tl s) ℓ).1, good s, (corec' σ hd tl good bad (tl s) ℓ).2 (bad s)⟩, id⟩
-
-def Bar.corec (σ : Sort u) (hd : σ → Nat) (tl : σ → σ) (good : ∀ s, Fin (hd s)) (bad : ∀ s, Fin (hd (tl s))) (s : σ) : Bar :=
-  .mk (corec' σ hd tl good bad s · |>.1) fun ℓ ℓ' => by
-    induction ℓ generalizing s ℓ' with | zero => constructor | succ ℓ ih =>
-    cases ℓ' with | zero => constructor | succ ℓ' =>
-    refine ⟨rfl, ih (tl s) ℓ', rfl, ?_⟩
-    cases ℓ with | zero => constructor | succ ℓ =>
-    cases ℓ' with | zero => constructor | succ ℓ' =>
-    exact ⟨rfl, rfl⟩
-
-theorem Bar.hd_corec σ hd tl good bad s : (corec σ hd tl good bad s).hd = hd s :=
-  rfl
-
-theorem Bar.tl_corec σ hd tl good bad s : (corec σ hd tl good bad s).tl = corec σ hd tl good bad (tl s) :=
-  rfl
-
-theorem Bar.good_corec σ hd tl good bad s : (corec σ hd tl good bad s).good = good s :=
-  rfl
-
-theorem Bar.bad_corec σ hd tl good bad s : (corec σ hd tl good bad s).bad = bad s :=
-  rfl
-
-def Baz.Approx : Nat → (α : Type) × (α → Type × Type × Type)
-  | 0 => ⟨Unit, fun _ => (Unit, Unit, Unit)⟩
-  | ℓ + 1 => ⟨(hd : Nat) × (tl : (Approx ℓ).1) × Fin hd × ((Approx ℓ).2 tl).1 × ((Approx ℓ).2 tl).2.1, fun s => (Fin (s.1 + 1), ((Approx ℓ).2 s.2.1).2.2, Fin (s.1 + 2))⟩
-
-def Baz.Approx.Agree : ∀ ℓ ℓ', (a : (Approx ℓ).1) → (a' : (Approx ℓ').1) → (p : Prop) × (p → (((Approx ℓ).2 a).1 → ((Approx ℓ').2 a').1 → Prop) × (((Approx ℓ).2 a).2.1 → ((Approx ℓ').2 a').2.1 → Prop) × (((Approx ℓ).2 a).2.2 → ((Approx ℓ').2 a').2.2 → Prop))
-  | 0, _, _, _ => ⟨True, fun _ => (fun _ _ => True, fun _ _ => True, fun _ _ => True)⟩
-  | _ + 1, 0, _, _ => ⟨True, fun _ => (fun _ _ => True, fun _ _ => True, fun _ _ => True)⟩
-  | ℓ + 1, ℓ' + 1, a, a' => ⟨∃ hd : a.1 = a'.1, ∃ tl : (Agree ℓ ℓ' a.2.1 a'.2.1).1, a.2.2.1 = hd ▸ a'.2.2.1 ∧ ((Agree ℓ ℓ' a.2.1 a'.2.1).2 tl).1 a.2.2.2.1 a'.2.2.2.1, fun h => (fun (lhs rhs : Fin _) => h.1 ▸ lhs = rhs, ((Agree ℓ ℓ' a.2.1 a'.2.1).2 h.2.1).2.2, fun (lhs rhs : Fin _) => h.1 ▸ lhs = rhs)⟩
-
-def Baz : Type :=
-  { f : ∀ ℓ, (Baz.Approx ℓ).1 // ∀ ℓ ℓ', (Baz.Approx.Agree ℓ ℓ' (f ℓ) (f ℓ')).1 }
-
-def Baz.hd (self : Baz) : Nat :=
-  (self.1 (.succ .zero)).1
-
-def Baz.tl (self : Baz) : Baz :=
-  ⟨fun ℓ => (self.1 ℓ.succ).2.1, fun ℓ ℓ' => (self.2 ℓ.succ ℓ'.succ).2.1⟩
-
-def Baz.zero (self : Baz) : Fin self.hd :=
-  (self.1 (.succ .zero)).2.2.1
-
-def Baz.one (self : Baz) : Fin (self.tl.hd + 1) :=
-  (self.1 (.succ (.succ .zero))).2.2.2.1
-
-def Baz.two (self : Baz) : Fin (self.tl.tl.hd + 2) :=
-  (self.1 (.succ (.succ (.succ .zero)))).2.2.2.2
-
-def Baz.corec' (σ : Sort u) (hd : σ → Nat) (tl : σ → σ) (zero : ∀ s, Fin (hd s)) (one : ∀ s, Fin (hd (tl s) + 1)) (two : ∀ s, Fin (hd (tl (tl s)) + 2)) (s : σ) : ∀ ℓ, (x : (Baz.Approx ℓ).1) × (Fin (hd s + 1) → ((Baz.Approx ℓ).2 x).1) × (Fin (hd (tl s) + 2) → ((Baz.Approx ℓ).2 x).2.1) × (Fin (hd s + 2) → ((Baz.Approx ℓ).2 x).2.2)
-  | 0 => ⟨(), fun _ => (), fun _ => (), fun _ => ()⟩
-  | ℓ + 1 => ⟨⟨hd s, (corec' σ hd tl zero one two (tl s) ℓ).1, zero s, (corec' σ hd tl zero one two (tl s) ℓ).2.1 (one s), (corec' σ hd tl zero one two (tl s) ℓ).2.2.1 (two s)⟩, id, (corec' σ hd tl zero one two (tl s) ℓ).2.2.2, id⟩
-
-def Baz.corec (σ : Sort u) (hd : σ → Nat) (tl : σ → σ) (zero : ∀ s, Fin (hd s)) (one : ∀ s, Fin (hd (tl s) + 1)) (two : ∀ s, Fin (hd (tl (tl s)) + 2)) (s : σ) : Baz :=
-  .mk (corec' σ hd tl zero one two s · |>.1) fun ℓ ℓ' => by
-    induction ℓ generalizing s ℓ' with | zero => constructor | succ ℓ ih =>
-    cases ℓ' with | zero => constructor | succ ℓ' =>
-    refine ⟨rfl, ih (tl s) ℓ', rfl, ?_⟩
-    cases ℓ with | zero => constructor | succ ℓ =>
-    cases ℓ' with | zero => constructor | succ ℓ' =>
-    rfl
-
-theorem Baz.hd_corec hd tl zero one two : (corec σ hd tl zero one two s).hd = hd s :=
-  rfl
-
-theorem Baz.tl_corec hd tl zero one two : (corec σ hd tl zero one two s).tl = corec σ hd tl zero one two (tl s) :=
-  rfl
-
-theorem Baz.zero_corec hd tl zero one two : (corec σ hd tl zero one two s).zero = zero s :=
-  rfl
-
-theorem Baz.one_corec hd tl zero one two : (corec σ hd tl zero one two s).one = one s :=
-  rfl
-
-theorem Baz.two_corec hd tl zero one two : (corec σ hd tl zero one two s).two = two s :=
-  rfl
-
-theorem iter_comp {f : β → β} {g : α → β} {h : α → α} (eq : ∀ x, f (g x) = g (h x)): iter f (g x) n = g (iter h x n) := by
-  induction n generalizing x with
-  | zero => rfl
-  | succ n ih => exact (congrArg (iter f · n) (eq x)).trans ih
-
-theorem rec_comp {f : β → β} {g : α → β} {h : α → α} (eq : ∀ x, f (g x) = g (h x)) {n : Nat}: n.rec (g x) (fun _ => f) = g (n.rec x fun _ => h) := by
-  induction n generalizing x with
-  | zero => rfl
-  | succ n ih => exact (congrArg f ih).trans (eq _)
-
-def Qux.Approx : Nat → (α : Type) × (α → (Nat → Option Nat) × (Nat → Option Nat))
-  | 0 => ⟨Unit, fun _ => (fun _ => none, fun _ => none)⟩
-  | ℓ + 1 => ⟨(hd : Nat) × (tl : (Approx ℓ).1) × (∀ n, (((Approx ℓ).2 tl).1 n).elim Unit (Fin <| · + n)) × (∀ n, (((Approx ℓ).2 tl).2 n).elim Unit (Fin <| · + n)), fun s => (fun n => n.casesOn (some s.1) ((Approx ℓ).2 s.2.1).1, fun n => n.casesOn (some s.1) ((Approx ℓ).2 s.2.1).2)⟩
-
-axiom Qux : Type
-axiom Qux.hd (self : Qux) : Nat
-axiom Qux.tl (self : Qux) : Qux
-axiom Qux.val₁ (self : Qux) (n : Nat) : Fin (hd (n.rec self fun _ => tl) + n)
-axiom Qux.val₂ (self : Qux) (n : Nat) : Fin (hd (iter tl self n) + n)
-axiom Qux.corec (σ : Sort u) (hd : σ → Nat) (tl : σ → σ) (val₁ : ∀ s n, Fin (hd (n.rec s fun _ => tl) + n)) (val₂ : ∀ s n, Fin (hd (iter tl s n) + n)) (s : σ) : Qux
-axiom Qux.hd_corec σ hd tl val₁ val₂ s : (corec σ hd tl val₁ val₂ s).hd = hd s
-axiom Qux.tl_corec σ hd tl val₁ val₂ s : (corec σ hd tl val₁ val₂ s).tl = corec σ hd tl val₁ val₂ (tl s)
-axiom Qux.val₁_corec {σ hd tl val₁ val₂} s : (corec σ hd tl val₁ val₂ s).val₁ n = (val₁ s n).cast (congrArg (· + n) (.trans (.symm (hd_corec σ hd tl val₁ val₂ (n.rec s fun _ => tl))) (congrArg Qux.hd (.symm (rec_comp (tl_corec σ hd tl val₁ val₂))))))
-axiom Qux.val₂_corec {σ hd tl val₁ val₂} s : (corec σ hd tl val₁ val₂ s).val₂ n = (val₂ s n).cast (congrArg (· + n) (.trans (.symm (hd_corec σ hd tl val₁ val₂ (iter tl s n))) (congrArg Qux.hd (.symm (iter_comp (tl_corec σ hd tl val₁ val₂))))))
-
-variable {α : Type} {β : α → Type} (γ : ∀ a, β a → α → Type) (δ : ∀ a, β a → ∀ a', β a' → α → Type)
-
-def WW.Approx : Nat → (Approx : Type) × (∀ hd, (β hd → Approx) → Type) × (∀ hd, (β hd → Approx) → Type) × ∀ hd (hd' : β hd → α), (∀ b, β (hd' b) → Approx) → Type
-  | 0 => ⟨Unit, fun _ _ => Unit, fun _ _ => Unit, fun _ _ _ => Unit⟩
-  | ℓ + 1 => ⟨(hd : α) × (tl : β hd → (Approx ℓ).1) × (Approx ℓ).2.1 hd tl × (Approx ℓ).2.2.1 hd tl, fun hd tl => ∀ b, γ hd b (tl b).1, fun hd tl => (Approx ℓ).2.2.2 hd (fun b => (tl b).1) (fun b => (tl b).2.1), fun hd hd' tl => ∀ b b', δ hd b (hd' b) b' (tl b b').1⟩
-
-variable {γ δ} in
-def WW.Agree : (p : (Approx γ δ ℓ).1 → (Approx γ δ ℓ').1 → Prop) × (∀ {hd tl tl'}, (∀ b, p (tl b) (tl' b)) → (Approx γ δ ℓ).2.1 hd tl → (Approx γ δ ℓ').2.1 hd tl' → Prop) × (∀ {hd tl tl'}, (∀ b, p (tl b) (tl' b)) → (Approx γ δ ℓ).2.2.1 hd tl → (Approx γ δ ℓ').2.2.1 hd tl' → Prop) × ∀ {hd hd' tl tl'}, (∀ b b', p (tl b b') (tl' b b')) → (Approx γ δ ℓ).2.2.2 hd hd' tl → (Approx γ δ ℓ').2.2.2 hd hd' tl' → Prop :=
+variable {γ} in
+def MW.Agree (s : (Approx γ ℓ).1) (s' : (Approx γ ℓ').1) : Prop :=
   match ℓ, ℓ' with
-  | 0, _ => ⟨fun _ _ => True, fun _ _ _ => True, fun _ _ _ => True, fun _ _ _ => True⟩
-  | _ + 1, 0 => ⟨fun _ _ => True, fun _ _ _ => True, fun _ _ _ => True, fun _ _ _ => True⟩
-  | _ + 1, _ + 1 => ⟨fun a a' => ∃ hhd : a.1 = a'.1, ∃ htl, Agree.2.1 htl a.2.2.1 (hhd.symm.rec (motive := fun hd hhd => (Approx γ δ _).2.1 hd fun b => a'.2.1 (hhd ▸ b :)) a'.2.2.1) ∧ Agree.2.2.1 htl a.2.2.2 (hhd.symm.rec (motive := fun hd hhd => (Approx γ δ _).2.2.1 hd fun b => a'.2.1 (hhd ▸ b :)) a'.2.2.2), fun htl c c' => ∀ b, c b = (htl b).1 ▸ c' b, fun {_ _ tl'} htl c c' => Agree.2.2.2 (fun b b' => (htl b).2.1 b') c ((funext fun b => (htl b).1.symm).rec (motive := fun hd' hhd' => (Approx γ δ _).2.2.2 _ hd' fun b b' => (tl' b).2.1 (congrFun hhd' b ▸ b' :)) c'), fun htl c c' => ∀ b b', c b b' = (htl b b').1 ▸ c' b b'⟩
+  | 0, _ | _ + 1, 0 => True
+  | _ + 1, _ + 1 => ∃ hhd : s.1.1 = s'.1.1, (∀ b, Agree (s.1.2 b) (s'.1.2 (hhd ▸ b))) ∧ ∀ bs a h h', s.2 bs a h = s'.2 bs a h'
 
-def WW : Type :=
-  { f : ∀ ℓ, (WW.Approx γ δ ℓ).1 // ∀ ℓ ℓ', WW.Agree.1 (f ℓ) (f ℓ') }
+def MW : Type :=
+  { f : ∀ ℓ, (MW.Approx γ ℓ).1 // ∀ ℓ ℓ', MW.Agree (f ℓ) (f ℓ') }
 
-variable {γ δ}
+variable {γ}
 
-def WW.hd (self : WW γ δ) : α :=
-  (self.1 1).1
+def MW.hd (self : MW γ) : α :=
+  (self.1 1).1.1
 
-def WW.tl (self : WW γ δ) (b : β self.hd) : WW γ δ :=
-  ⟨fun ℓ => (self.1 ℓ.succ).2.1 ((self.2 1 ℓ.succ).1 ▸ b), fun ℓ ℓ' => cast (by grind only) ((self.2 ℓ.succ ℓ'.succ).2.1 ((self.2 1 ℓ.succ).1 ▸ b))⟩
+def MW.tl (self : MW γ) (b : β self.hd) : MW γ :=
+  ⟨fun ℓ => (self.1 ℓ.succ).1.2 ((self.2 1 ℓ.succ).1 ▸ b), fun ℓ ℓ' => cast (by grind only) ((self.2 ℓ.succ ℓ'.succ).2.1 ((self.2 1 ℓ.succ).1 ▸ b))⟩
 
-def WW.val (self : WW γ δ) b : γ self.hd b (self.tl b).hd :=
-  (self.2 2 1).1.rec (motive := fun hd hhd => γ hd ((self.2 1 2).1.trans hhd ▸ b) _) ((self.1 2).2.2.1 ((self.2 1 2).1 ▸ b))
+def MW.val (self : MW γ) (bs : List (Σ a, β a)) a (h : Valid hd tl self bs a) : γ bs a :=
+  (self.1 bs.length.succ).2 bs a <| by
+    change (Approx γ bs.length.succ).2 (self.1 bs.length.succ) bs a
+    induction bs generalizing self with
+    | nil => cases h with | nil => rfl
+    | cons b bs ih => cases h with | cons h => exact ⟨(self.2 1 (bs.length + 2)).1, ih (self.tl _) h⟩
 
-def WW.val' (self : WW γ δ) b b' : δ self.hd b (self.tl b).hd b' ((self.tl b).tl b').hd :=
-  cast (by dsimp only [hd, tl]; congr <;> grind only) (((self.2 3 2).2.1 ((self.2 1 3).1 ▸ b)).1.rec (motive := fun hd' hhd' => δ _ b hd' ((show _ = ((self.1 3).snd.fst ((self.2 1 3).1 ▸ b)).1 from ((self.2 2 3).2.1 ((self.2 1 2).1 ▸ b)).1.trans (by grind only)).trans hhd' ▸ b') _) ((self.2 3 1).1.rec (motive := fun hd hhd => δ hd ((self.2 1 3).1.trans hhd ▸ b) _ _ _) ((self.1 3).2.2.2 ((self.2 1 3).1 ▸ b) (Eq.ndrec b' (((self.2 2 3).2.1 ((self.2 1 2).1 ▸ b)).1.trans (by grind only))))))
+def MW.corec' (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ (s : σ) bs a, Valid hd tl s bs a → γ bs a) (s : σ) : ∀ ℓ, { x : (Approx γ ℓ).1 // ∀ bs a, (Approx γ ℓ).2 x bs a → Valid hd tl s bs a }
+  | 0 => ⟨(), nofun⟩
+  | ℓ + 1 =>
+    have pf bs a (h : bs.casesOn (a = hd s) fun b bs => ∃ h : b.1 = hd s, (Approx γ ℓ).snd (corec' σ hd tl val (tl s (h ▸ b.2)) ℓ).val bs a) : Valid hd tl s bs a := by
+      cases bs with
+      | nil => cases h; constructor
+      | cons b bs =>
+        rcases b with ⟨_, b⟩
+        rcases h with ⟨h', h⟩
+        cases h'
+        exact .cons ((corec' σ hd tl val (tl s b) ℓ).2 bs a h)
+    ⟨⟨⟨hd s, fun b => corec' σ hd tl val (tl s b) ℓ⟩, fun bs a h => val s bs a (pf bs a h)⟩, pf⟩
 
-def WW.corec' (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ s b, γ (hd s) b (hd (tl s b))) (val' : ∀ s b b', δ (hd s) b (hd (tl s b)) b' (hd (tl (tl s b) b'))) : ∀ ℓ, (f : σ → (Approx γ δ ℓ).1) × (∀ s, (Approx γ δ ℓ).2.1 (hd s) fun b => f (tl s b)) × (∀ s, (Approx γ δ ℓ).2.2.1 (hd s) fun b => f (tl s b)) × ∀ s, (Approx γ δ ℓ).2.2.2 (hd s) (fun b => hd (tl s b)) fun b b' => f (tl (tl s b) b')
-  | 0 => ⟨fun _ => (), fun _ => (), fun _ => (), fun _ => ()⟩
-  | ℓ + 1 => ⟨fun s => ⟨hd s, fun b => (corec' σ hd tl val val' ℓ).1 (tl s b), (corec' σ hd tl val val' ℓ).2.1 s, (corec' σ hd tl val val' ℓ).2.2.1 s⟩, val, (corec' σ hd tl val val' ℓ).2.2.2, val'⟩
-
-def WW.corec (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ s b, γ (hd s) b (hd (tl s b))) (val' : ∀ s b b', δ (hd s) b (hd (tl s b)) b' (hd (tl (tl s b) b'))) (s : σ) : WW γ δ :=
-  .mk (fun ℓ => (corec' σ hd tl val val' ℓ).1 s) fun ℓ ℓ' => by
+def MW.corec (σ : Type u) (hd : σ → α) (tl : ∀ s, β (hd s) → σ) (val : ∀ (s : σ) bs a, Valid hd tl s bs a → γ bs a) (s : σ) : MW γ :=
+  .mk (fun ℓ => (corec' σ hd tl val s ℓ).1) fun ℓ ℓ' => by
     induction ℓ generalizing s ℓ' with | zero => constructor | succ ℓ ih =>
     cases ℓ' with | zero => constructor | succ ℓ' =>
-    refine ⟨rfl, fun b => ih (tl s b) ℓ', ?_, ?_⟩
-    . cases ℓ with | zero => constructor | succ ℓ =>
-      cases ℓ' with | zero => constructor | succ ℓ' =>
-      intro b
-      rfl
-    . cases ℓ with | zero => constructor | succ ℓ =>
-      cases ℓ' with | zero => constructor | succ ℓ' =>
-      cases ℓ with | zero => constructor | succ ℓ =>
-      cases ℓ' with | zero => constructor | succ ℓ' =>
-      intro b b'
-      rfl
+    exact ⟨rfl, fun b => ih (tl s b) ℓ', fun bs a h h' => rfl⟩
 
-theorem WW.hd_corec σ hd tl val val' s : (@corec α β γ δ σ hd tl val val' s).hd = hd s :=
+def MW.hd_corec σ hd tl val s : (@corec α β γ σ hd tl val s).hd = hd s :=
   rfl
 
-theorem WW.tl_corec σ hd tl val val' s b : (@corec α β γ δ σ hd tl val val' s).tl b = corec σ hd tl val val' (tl s b) :=
+def MW.tl_corec σ hd tl val s b : (@corec α β γ σ hd tl val s).tl b = corec σ hd tl val (tl s b) :=
   rfl
 
-theorem WW.val_corec σ hd tl val val' s b : (@corec α β γ δ σ hd tl val val' s).val b = val s b :=
+def MW.val_corec σ hd tl val s bs a h : (@corec α β γ σ hd tl val s).val bs a h = val s bs a (h.comap (corec σ hd tl val) (fun _ => rfl) (fun _ _ => rfl)) :=
   rfl
 
-theorem WW.val'_corec σ hd tl val val' s b b' : (@corec α β γ δ σ hd tl val val' s).val' b b' = val' s b b' :=
-  rfl
+theorem MW.ext (r : (lhs rhs : MW γ) → Prop) (hd : ∀ {lhs rhs}, r lhs rhs → hd lhs = hd rhs) (tl : ∀ {lhs rhs} h b, r (tl lhs b) (tl rhs (hd h ▸ b))) (val : ∀ {lhs rhs} (h : r lhs rhs) bs a v, val lhs bs a v = val rhs bs a (Valid.ext @hd @tl h v)) {lhs rhs} (h : r lhs rhs) : lhs = rhs := by
+  apply Subtype.eq
+  funext ℓ
+  induction ℓ using Nat.rec generalizing lhs rhs with | zero => rfl | succ ℓ ih =>
+  have : (lhs.1 ℓ.succ).1.1 = (rhs.1 ℓ.succ).1.1 :=
+    calc (lhs.1 ℓ.succ).1.1
+      _ = lhs.hd             := (lhs.2 ℓ.succ 1).1
+      _ = rhs.hd             := hd h
+      _ = (rhs.1 ℓ.succ).1.1 := (rhs.2 1 ℓ.succ).1
+  dsimp only [Approx]
+  ext
+  . exact this
+  . refine .trans (b := fun b => (rhs.1 ℓ.succ).1.2 (this ▸ b)) (heq_of_eq ?_) (eqRec_pi (motive₁ := fun a _ => β a) (fun _ _ _ => (Approx γ ℓ).1) ▸ (eqRec_heq_eq (motive := fun a _ => β a → (Approx γ ℓ).1) (h := this.symm) (rhs := (rhs.1 ℓ.succ).1.2)).mpr .rfl)
+    funext b
+    specialize ih (tl h ((lhs.2 1 ℓ.succ).1 ▸ b :))
+    simp [MW.tl] at ih
+    exact ih
+  . clear ih
+    refine hfunext fun bs => hfunext fun a => ?_
+    refine hfunext' ?_ fun v v' h => ?_
+    . cases bs with
+      | nil => simp [this]
+      | cons b bs =>
+        rcases b with ⟨_, b⟩
+        ext
+        constructor
+        . intro ⟨h', v⟩
+          obtain rfl : _ = lhs.hd := h'.trans (lhs.2 ℓ.succ 1).1
+          refine ⟨.trans h' this, ?_⟩
+          obtain rfl : h' = (lhs.2 1 ℓ.succ).1 := rfl
+          change (Approx γ ℓ).2 ((lhs.tl b).1 ℓ) bs a at v
+          suffices (Approx γ ℓ).2 ((rhs.tl (hd h ▸ b)).1 ℓ) bs a by simpa [MW.tl]
+          have h' := tl h b
+          generalize lhs.tl b = lhs' at v h'
+          generalize rhs.tl (hd h ▸ b) = rhs' at h'
+          clear lhs rhs h this b
+          induction ℓ generalizing lhs' rhs' bs with
+          | zero => cases v
+          | succ ℓ ih =>
+            cases bs with
+            | nil =>
+              cases v
+              dsimp!
+              rewrite [(lhs'.2 ℓ.succ 1).1, (rhs'.2 ℓ.succ 1).1]
+              exact hd h'
+            | cons b bs =>
+              rcases b with ⟨_, b⟩
+              rcases v with ⟨v', v⟩
+              cases v'
+              refine ⟨?_, ?_⟩
+              . rewrite [(lhs'.2 ℓ.succ 1).1, (rhs'.2 ℓ.succ 1).1]
+                exact hd h'
+              specialize ih bs (lhs'.tl ((lhs'.2 ℓ.succ 1).1 ▸ b : β (lhs'.1 1).1.1)) ?_ (rhs'.tl ((lhs'.2 ℓ.succ 1).1.trans (hd h') ▸ b)) ?_
+              . simpa [MW.tl] using v
+              . specialize tl h' ((lhs'.2 ℓ.succ 1).1 ▸ b : β (lhs'.1 1).1.1)
+                simpa using tl
+              simpa [MW.tl] using ih
+        . intro ⟨h', v⟩
+          obtain rfl : _ = lhs.hd := h'.trans (rhs.2 ℓ.succ 1).1 |>.trans (hd h).symm
+          refine ⟨.trans h' this.symm, ?_⟩
+          obtain rfl : h' = (hd h).trans (rhs.2 1 ℓ.succ).1 := rfl
+          replace v : (Approx γ ℓ).2 ((rhs.tl (hd h ▸ b)).1 ℓ) bs a := by simpa [MW.tl] using v
+          change (Approx γ ℓ).2 ((lhs.tl b).1 ℓ) bs a
+          have h' := tl h b
+          generalize lhs.tl b = lhs' at h'
+          generalize rhs.tl (hd h ▸ b) = rhs' at v h'
+          clear lhs rhs h this b
+          induction ℓ generalizing lhs' rhs' bs with
+          | zero => cases v
+          | succ ℓ ih =>
+            cases bs with
+            | nil =>
+              cases v
+              dsimp!
+              rewrite [(lhs'.2 ℓ.succ 1).1, (rhs'.2 ℓ.succ 1).1]
+              exact (hd h').symm
+            | cons b bs =>
+              rcases b with ⟨_, b⟩
+              rcases v with ⟨v', v⟩
+              cases v'
+              refine ⟨?_, ?_⟩
+              . rewrite [(lhs'.2 ℓ.succ 1).1, (rhs'.2 ℓ.succ 1).1]
+                exact (hd h').symm
+              specialize ih bs (lhs'.tl ((rhs'.2 ℓ.succ 1).1.trans (hd h').symm ▸ b)) (rhs'.tl ((rhs'.2 ℓ.succ 1).1 ▸ b : β (rhs'.1 1).1.1)) ?_ ?_
+              . simpa [MW.tl] using v
+              . specialize tl h' ((rhs'.2 ℓ.succ 1).1.trans (hd h').symm ▸ b)
+                simpa using tl
+              simpa [MW.tl] using ih
+    . clear h
+      simp
+      change (Approx γ ℓ.succ).2 _ bs a at v
+      have v₁ : (Approx γ bs.length.succ).2 (lhs.1 _) bs a := by
+        clear rhs h this v'
+        induction bs generalizing lhs ℓ with
+        | nil => cases v; exact (lhs.2 ℓ.succ 1).1
+        | cons b bs ih =>
+          rcases b with ⟨_, b⟩
+          rcases v with ⟨v', v⟩
+          cases v'
+          refine ⟨(lhs.2 ℓ.succ bs.length.succ.succ).1, ?_⟩
+          cases ℓ with | zero => cases v | succ ℓ =>
+          specialize @ih ℓ (lhs.tl ((lhs.2 ℓ.succ.succ 1).1 ▸ b : β (lhs.1 1).1.1)) ?_
+          . simpa [MW.tl] using v
+          simpa [MW.tl] using ih
+      rewrite [(lhs.2 ℓ.succ bs.length.succ).2.2 bs a v v₁]
+      clear v
+      change (Approx γ ℓ.succ).2 _ bs a at v'
+      have v₁' : (Approx γ bs.length.succ).2 (rhs.1 _) bs a := by
+        clear lhs h this v₁
+        induction bs generalizing rhs ℓ with
+        | nil => cases v'; exact (rhs.2 ℓ.succ 1).1
+        | cons b bs ih =>
+          rcases b with ⟨_, b⟩
+          rcases v' with ⟨v', v⟩
+          cases v'
+          refine ⟨(rhs.2 ℓ.succ bs.length.succ.succ).1, ?_⟩
+          cases ℓ with | zero => cases v | succ ℓ =>
+          specialize @ih ℓ (rhs.tl ((rhs.2 ℓ.succ.succ 1).1 ▸ b : β (rhs.1 1).1.1)) ?_
+          . simpa [MW.tl] using v
+          simpa [MW.tl] using ih
+      rewrite [(rhs.2 ℓ.succ bs.length.succ).2.2 bs a v' v₁']
+      clear v'
+      refine val h bs a ?_
+      clear rhs h this v₁'
+      induction bs generalizing lhs with
+      | nil => cases v₁; constructor
+      | cons b bs ih =>
+        cases b
+        rcases v₁ with ⟨h, v⟩
+        dsimp at h
+        cases h
+        generalize hb : Sigma.mk .. = b
+        cases b
+        obtain rfl := (lhs.2 1 bs.length.succ.succ).1.trans (congrArg (·.1) hb)
+        constructor
+        apply ih
+        simp [MW.tl]
+        replace hb : ‹β (lhs.1 bs.length.succ.succ).1.1› = (lhs.2 bs.length.succ.succ 1).1 ▸ ‹_› := by grind only
+        cases hb
+        exact v
