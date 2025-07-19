@@ -2,107 +2,45 @@
 
 mutual
 
-inductive Ctxt.Raw
-  | nil : Ctxt.Raw
-  | cons (Γ : Ctxt.Raw) (σ : Ty.Raw) : Ctxt.Raw
+inductive Ctxt.Pre
+  | nil : Ctxt.Pre
+  | cons (Γ : Ctxt.Pre) (σ : Ty.Pre) : Ctxt.Pre
 
-inductive Ty.Raw
-  | base (Γ : Ctxt.Raw) : Ty.Raw
-  | pi (Γ : Ctxt.Raw) (σ : Ty.Raw) (τ : Ty.Raw) : Ty.Raw
-
-end
-
-mutual
-
-inductive Ctxt.Raw'
-  | nil : Ctxt.Raw'
-  | cons (Γ : Ctxt.Raw') (σ : Ty.Raw') : Ctxt.Raw'
-
-inductive Ty.Raw'
-  | base (Γ' : Ctxt.Raw') (Γ : Ctxt.Raw') : Ty.Raw'
-  | pi (Γ' : Ctxt.Raw') (Γ : Ctxt.Raw') (σ : Ty.Raw') (τ : Ty.Raw') : Ty.Raw'
+inductive Ty.Pre
+  | base (Γ : Ctxt.Pre) : Ty.Pre
+  | pi (Γ : Ctxt.Pre) (σ : Ty.Pre) (τ : Ty.Pre) : Ty.Pre
 
 end
 
 mutual
 
-def Ctxt.Raw.f : Ctxt.Raw → Ctxt.Raw'
-  | .nil => .nil
-  | .cons Γ σ => .cons Γ.f σ.f
+inductive Ctxt.Pre.Good : Ctxt.Pre → Prop
+  | nil : Ctxt.Pre.Good .nil
+  | cons (hΓ : Γ.Good) (hσ : σ.Good Γ) : Ctxt.Pre.Good (.cons Γ σ)
 
-def Ty.Raw.f : Ty.Raw → Ty.Raw'
-  | .base Γ => .base Γ.f Γ.f
-  | .pi Γ σ τ => .pi Γ.f Γ.f σ.f τ.f
-
-end
-
-mutual
-
-def Ctxt.Raw.g : Ctxt.Raw → Ctxt.Raw'
-  | .nil => .nil
-  | .cons Γ σ => .cons Γ.g (σ.g Γ.g)
-
-def Ty.Raw.g (Γ' : Ctxt.Raw') : Ty.Raw → Ty.Raw'
-  | .base Γ => .base Γ' Γ.g
-  | .pi Γ σ τ => .pi Γ' Γ.g (σ.g Γ.g) (τ.g (.cons Γ.g (σ.g Γ.g)))
+inductive Ty.Pre.Good : Ctxt.Pre → Ty.Pre → Prop
+  | base (hΓ : Γ.Good) : Ty.Pre.Good Γ (.base Γ)
+  | pi (hΓ : Γ.Good) (hσ : σ.Good Γ) (hτ : τ.Good (.cons Γ σ)) : Ty.Pre.Good Γ (.pi Γ σ τ)
 
 end
-
-theorem Ctxt.Raw.f.inj : f Γ₁ = f Γ₂ → Γ₁ = Γ₂ := by
-  apply @Ctxt.Raw.rec (fun Γ₁ => ∀ Γ₂, Γ₁.f = Γ₂.f → Γ₁ = Γ₂) (fun τ₁ => ∀ τ₂, τ₁.f = τ₂.f → τ₁ = τ₂)
-  all_goals
-    intros
-    rename_i x h
-    cases x <;> simp! at h
-    repeat cases ‹_ ∧ _›
-    congr <;> apply_rules
-
-theorem Ty.Raw.f.inj : f τ₁ = f τ₂ → τ₁ = τ₂ := by
-  apply @Ty.Raw.rec (fun Γ₁ => ∀ Γ₂, Γ₁.f = Γ₂.f → Γ₁ = Γ₂) (fun τ₁ => ∀ τ₂, τ₁.f = τ₂.f → τ₁ = τ₂)
-  all_goals
-    intros
-    rename_i x h
-    cases x <;> simp! at h
-    repeat cases ‹_ ∧ _›
-    congr <;> apply_rules
-
-theorem Ctxt.Raw.g.inj : g Γ₁ = g Γ₂ → Γ₁ = Γ₂ := by
-  apply @Ctxt.Raw.rec (fun Γ₁ => ∀ Γ₂, Γ₁.g = Γ₂.g → Γ₁ = Γ₂) (fun τ₁ => ∀ Γ₁ Γ₂ τ₂, τ₁.g Γ₁ = τ₂.g Γ₂ → Γ₁ = Γ₂ ∧ τ₁ = τ₂)
-  all_goals
-    intros
-    rename_i x h
-    cases x <;> simp! at h
-    repeat simp only [forall_and] at ‹∀ _, _›
-    repeat cases ‹_ ∧ _›
-    and_intros <;> congr <;> apply_rules
-
-theorem Ty.Raw.g.inj : g Γ₁ τ₁ = g Γ₂ τ₂ → Γ₁ = Γ₂ ∧ τ₁ = τ₂ := by
-  apply @Ty.Raw.rec (fun Γ₁ => ∀ Γ₂, Γ₁.g = Γ₂.g → Γ₁ = Γ₂) (fun τ₁ => ∀ Γ₁ Γ₂ τ₂, τ₁.g Γ₁ = τ₂.g Γ₂ → Γ₁ = Γ₂ ∧ τ₁ = τ₂)
-  all_goals
-    intros
-    rename_i x h
-    cases x <;> simp! at h
-    repeat simp only [forall_and] at ‹∀ _, _›
-    repeat cases ‹_ ∧ _›
-    and_intros <;> congr <;> apply_rules
 
 def Ctxt : Type :=
-  { Γ : Ctxt.Raw // Γ.f = Γ.g }
+  { Γ : Ctxt.Pre // Γ.Good }
 
 def Ty (Γ : Ctxt) : Type :=
-  { τ : Ty.Raw // τ.f = τ.g Γ.val.g }
+  { τ : Ty.Pre // τ.Good Γ.val }
 
 def Ctxt.nil : Ctxt :=
-  ⟨.nil, rfl⟩
+  ⟨.nil, .nil⟩
 
 def Ctxt.cons (Γ : Ctxt) (σ : Ty Γ) : Ctxt :=
-  ⟨.cons Γ.val σ.val, (congr (congrArg Raw'.cons Γ.property) σ.property :)⟩
+  ⟨.cons Γ.val σ.val, .cons Γ.property σ.property⟩
 
 def Ty.base (Γ : Ctxt) : Ty Γ :=
-  ⟨.base Γ.val, (congr (congrArg Raw'.base Γ.property) Γ.property :)⟩
+  ⟨.base Γ.val, .base Γ.property⟩
 
 def Ty.pi (Γ : Ctxt) (σ : Ty Γ) (τ : Ty (.cons Γ σ)) : Ty Γ :=
-  ⟨.pi Γ.val σ.val τ.val, (congr (congr (congr (congrArg Raw'.pi Γ.property) Γ.property) σ.property) τ.property :)⟩
+  ⟨.pi Γ.val σ.val τ.val, .pi Γ.property σ.property τ.property⟩
 
 section
 
@@ -118,11 +56,11 @@ mutual
 
 def Ctxt.rec'.raw : ∀ Γ hΓ, motive_1 ⟨Γ, hΓ⟩
   | .nil, _ => nil
-  | .cons Γ σ, h => cons ⟨Γ, (Ctxt.Raw'.cons.inj h).left⟩ ⟨σ, (Ctxt.Raw'.cons.inj h).right⟩ (Ctxt.rec'.raw ..) (Ty.rec'.raw ..)
+  | .cons Γ σ, h => cons ⟨Γ, by cases h; assumption⟩ ⟨σ, by cases h; assumption⟩ (Ctxt.rec'.raw ..) (Ty.rec'.raw ..)
 
 def Ty.rec'.raw Γ : ∀ τ hτ, motive_2 Γ ⟨τ, hτ⟩
-  | .base Γ', h => Ctxt.Raw.g.inj ((Ty.Raw'.base.inj h).left.symm.trans (Ty.Raw'.base.inj h).right) ▸ base ⟨Γ', (Ty.Raw'.base.inj h).right⟩ (Ctxt.rec'.raw ..)
-  | .pi Γ' σ τ, h => Ctxt.Raw.g.inj ((Ty.Raw'.pi.inj h).left.symm.trans (Ty.Raw'.pi.inj h).right.left) ▸ pi ⟨Γ', (Ty.Raw'.pi.inj h).right.left⟩ ⟨σ, (Ty.Raw'.pi.inj h).right.right.left⟩ ⟨τ, (Ty.Raw'.pi.inj h).right.right.right⟩ (Ctxt.rec'.raw ..) (Ty.rec'.raw ..) (Ty.rec'.raw ..)
+  | .base Γ', h => have : Γ'.Good := (by cases h; assumption); (by cases h; rfl : Γ = ⟨Γ', this⟩) ▸ base ⟨Γ', this⟩ (Ctxt.rec'.raw ..)
+  | .pi Γ' σ τ, h => have : Γ'.Good := (by cases h; assumption); (by cases h; rfl : Γ = ⟨Γ', this⟩) ▸ pi ⟨Γ', this⟩ ⟨σ, by cases h; assumption⟩ ⟨τ, by cases h; assumption⟩ (Ctxt.rec'.raw ..) (Ty.rec'.raw ..) (Ty.rec'.raw ..)
 
 end
 
@@ -160,11 +98,12 @@ mutual
 
 def Ctxt.rec.raw : ∀ Γ hΓ, motive_1 ⟨Γ, hΓ⟩
   | .nil, _ => nil
-  | .cons Γ σ, h => cons ⟨Γ, (Ctxt.Raw'.cons.inj h).left⟩ ⟨σ, (Ctxt.Raw'.cons.inj h).right⟩ (Ctxt.rec.raw ..) (Ty.rec.raw ..)
+  | .cons Γ σ, h => cons ⟨Γ, by cases h; assumption⟩ ⟨σ, by cases h; assumption⟩ (Ctxt.rec.raw ..) (Ty.rec.raw ..)
+
 
 def Ty.rec.raw Γ hΓ : ∀ τ hτ, motive_2 Γ ⟨τ, hτ⟩ hΓ
-  | .base Γ', h => Ctxt.Raw.g.inj ((Ty.Raw'.base.inj h).left.symm.trans (Ty.Raw'.base.inj h).right) ▸ base Γ hΓ
-  | .pi Γ' σ τ, h => have := Ctxt.Raw.g.inj ((Ty.Raw'.pi.inj h).left.symm.trans (Ty.Raw'.pi.inj h).right.left); let σ := ⟨σ, this ▸ (Ty.Raw'.pi.inj h).right.right.left⟩; let τ : Ty (Γ.cons σ) := ⟨τ, (Ty.Raw'.pi.inj h).right.right.right.trans (this ▸ rfl)⟩; this ▸ pi Γ σ τ hΓ (Ty.rec.raw ..) (Ty.rec.raw ..)
+  | .base Γ', h => have : Γ'.Good := (by cases h; assumption); (by cases h; rfl : Γ = ⟨Γ', this⟩) ▸ base Γ hΓ
+  | .pi Γ' σ τ, h => have : Γ'.Good := (by cases h; assumption); have hσ := (by cases h; assumption); have hτ := (by cases h; assumption); (by cases h; rfl : Γ = ⟨Γ', this⟩) ▸ pi Γ ⟨σ, hσ⟩ ⟨τ, hτ⟩ hΓ (Ty.rec.raw ..) (Ty.rec.raw ..)
 
 end
 
