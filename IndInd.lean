@@ -128,18 +128,18 @@ theorem Ty.rec_pi : rec nil cons base pi Γ (.pi Γ σ τ) = pi Γ σ τ (Ctxt.r
 end
 
 def Ctxt.id : Ctxt → Ctxt :=
-  @Ctxt.rec (fun _ => Ctxt) (fun _ _ => Ty)
-    (nil := nil)
-    (cons := fun _ _ => cons)
+  @rec (fun _ => Ctxt) (fun _ _ => Ty)
+    (nil := .nil)
+    (cons := fun _ _ => .cons)
     (base := fun _ => .base)
     (pi := fun _ _ _ => .pi)
 
 def Ty.id : ∀ {Γ}, Ty Γ → Ty Γ.id :=
-  @Ty.rec (fun _ => Ctxt) (fun _ _ => Ty)
+  @rec (fun _ => Ctxt) (fun _ _ => Ty)
     (nil := .nil)
     (cons := fun _ _ => .cons)
-    (base := fun _ => base)
-    (pi := fun _ _ _ => pi)
+    (base := fun _ => .base)
+    (pi := fun _ _ _ => .pi)
 
 theorem Ctxt.id_eq : ∀ Γ, id Γ = Γ := by
   apply @rec (fun Γ => Γ.id = Γ) (fun Γ τ hΓ => τ.id = hΓ.symm ▸ τ)
